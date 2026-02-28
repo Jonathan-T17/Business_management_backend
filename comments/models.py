@@ -10,30 +10,24 @@ from tasks.models import Task
 User = settings.AUTH_USER_MODEL
 
 
-class Report(models.Model):
-
-    REPORT_TYPE = (
-        ("TASK", "Task Report"),
-        ("OPEN", "Open Report"),
-        ("REQUESTED", "Requested Report"),
-    )
+class Comment(models.Model):
 
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
-        related_name="reports"
+        related_name="comments"
     )
 
     project = models.ForeignKey(
         Project,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True
+        on_delete=models.CASCADE,
+        related_name="comments"
     )
 
     task = models.ForeignKey(
         Task,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
+        related_name="comments",
         null=True,
         blank=True
     )
@@ -44,15 +38,9 @@ class Report(models.Model):
         null=True
     )
 
-    report_type = models.CharField(
-        max_length=20,
-        choices=REPORT_TYPE
-    )
-
-    title = models.CharField(max_length=255)
     content = models.TextField()
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["created_at"]

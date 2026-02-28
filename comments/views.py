@@ -4,34 +4,31 @@ from django.shortcuts import render
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Report
-from .serializers import ReportSerializer
+from .models import Comment
+from .serializers import CommentSerializer
 from activity.models import ActivityLog
 
 
-class ReportViewSet(viewsets.ModelViewSet):
-    serializer_class = ReportSerializer
+class CommentViewSet(viewsets.ModelViewSet):
+    serializer_class = CommentSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Report.objects.filter(
+        return Comment.objects.filter(
             company=self.request.user.company
         )
 
     def perform_create(self, serializer):
-        report = serializer.save(
+        comment = serializer.save(
             company=self.request.user.company,
             user=self.request.user
         )
 
         ActivityLog.objects.create(
-            company=report.company,
-            project=report.project,
-            task=report.task,
+            company=comment.company,
+            project=comment.project,
+            task=comment.task,
             user=self.request.user,
-            action="REPORT_SUBMITTED",
-            metadata={
-                "type": report.report_type,
-                "title": report.title
-            }
+            action="COMMENT_ADDED",
+            metadata={"length": len(comment.content)}
         )
