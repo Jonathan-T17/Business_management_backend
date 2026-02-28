@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'subscriptions',
     'analytics_ai',
     'auditlogs',
+    'activity',
 ]
 
 

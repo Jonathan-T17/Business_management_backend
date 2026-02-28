@@ -26,7 +26,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         'companies.Company', 
         on_delete=models.SET_NULL, 
         null=True, 
-        blank=True)
+        blank=True,
+        related_name='users')
+    
+    branch = models.ForeignKey(
+        'companies.Branch', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='users')
     
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -40,3 +48,12 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+    
+
+
+
+    # def save(self, *args, **kwargs):
+    #     # Automatically grant admin-site access
+    #     if self.role in ['SUPERUSER', 'ADMIN']:
+    #         self.is_staff = True
+    #     super().save(*args, **kwargs)
