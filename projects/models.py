@@ -1,8 +1,5 @@
 from django.db import models
-
-# Create your models here.
 from django.conf import settings
-from django.db import models
 from companies.models import Company, Branch
 
 User = settings.AUTH_USER_MODEL
@@ -34,16 +31,15 @@ class Project(models.Model):
     is_active = models.BooleanField(default=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("company", "name")
 
     def __str__(self):
-        return f"{self.name} ({self.company.name})"
-    
-
+        return self.name
 
 
 class ProjectMembership(models.Model):
-    
     ROLE_CHOICES = (
         ("OWNER", "Owner"),
         ("MANAGER", "Manager"),
@@ -58,7 +54,7 @@ class ProjectMembership(models.Model):
     )
 
     user = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="project_memberships"
     )
@@ -66,7 +62,7 @@ class ProjectMembership(models.Model):
     role = models.CharField(
         max_length=20,
         choices=ROLE_CHOICES,
-        default="VIEWER"
+        default="CONTRIBUTOR"
     )
 
     joined_at = models.DateTimeField(auto_now_add=True)

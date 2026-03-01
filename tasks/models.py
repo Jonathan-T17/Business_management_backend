@@ -1,5 +1,8 @@
+from datetime import timezone
+
 from django.conf import settings
 from django.db import models
+from companies.models import Company
 from projects.models import Project
 
 # Create your models here.
@@ -10,10 +13,17 @@ User = settings.AUTH_USER_MODEL
 class Task(models.Model):
 
     STATUS_CHOICES = (
-        ("TODO", "To Do"),
-        ("IN_PROGRESS", "In Progress"),
-        ("BLOCKED", "Blocked"),
-        ("DONE", "Done"),
+        ("pending", "Pending"),
+        ("in_progress", "In Progress"),
+        ("blocked", "Blocked"),
+        ("done", "Done"),
+    )
+
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="tasks"
     )
 
     project = models.ForeignKey(
@@ -41,7 +51,7 @@ class Task(models.Model):
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
-        default="TODO"
+        default="pending"
     )
 
     due_date = models.DateField(null=True, blank=True)
@@ -51,5 +61,36 @@ class Task(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def is_overdue(self):
+        return (
+            self.due_date and
+            self.due_date < timezone.now() and
+            self.status != "completed"
+        )
+
     def __str__(self):
         return f"{self.title} ({self.project.name})"
+    
+
+
+
+class TaskActivity(models.Model):
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.CASCADE,
+        related_name="activities"
+    )
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True
+    )
+
+    action = models.CharField(max_length=255)
+    summary = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.task} - {self.action}"

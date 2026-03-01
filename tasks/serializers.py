@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Task
+from .models import Task, TaskActivity
 
 
 class TaskSerializer(serializers.ModelSerializer):
@@ -18,3 +18,16 @@ class TaskSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ("created_by",)
+
+
+class TaskActivitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskActivity
+        fields = [
+            "id",
+            "task",
+            "user",
+            "action",
+            "timestamp",
+        ]
+        read_only_fields = ("user", "timestamp")

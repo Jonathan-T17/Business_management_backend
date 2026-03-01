@@ -28,11 +28,32 @@ class ProjectSerializer(serializers.ModelSerializer):
 class ProjectMembershipSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProjectMembership
-        fields = [
-            "id",
-            "project",
-            "user",
-            "role",
-            "joined_at",
-        ]
-        read_only_fields = ("joined_at",)
+        fields = "__all__"
+        read_only_fields = ("added_by",)
+
+    def validate(self, data):
+        request = self.context["request"]
+        project = data["project"]
+        role_to_assign = data["role"]
+
+        try:
+            my_membership = ProjectMembership.objects.get(
+                project=project,
+                user=request.user
+            )
+        except ProjectMembership.DoesNotExist:
+            raise serializers.ValidationError(
+                "You are not a member of this project."
+            )
+
+        if my_membership.role == "MANAGER" and role_to_assign != "MEMBER":
+            raise serializers.ValidationError(
+                "Managers can only add members."
+            )
+
+        if my_membership.role == "MEMBER":
+            raise serializers.ValidationError(
+                "Members cannot add users."
+            )
+
+        return data

@@ -52,8 +52,26 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 
-    # def save(self, *args, **kwargs):
-    #     # Automatically grant admin-site access
-    #     if self.role in ['SUPERUSER', 'ADMIN']:
-    #         self.is_staff = True
-    #     super().save(*args, **kwargs)
+    def save(self, *args, **kwargs):
+        # Automatically grant admin-site access
+        if self.role in ['SUPERUSER', 'ADMIN']:
+            self.is_staff = True
+        super().save(*args, **kwargs)
+
+
+
+    @property
+    def is_company_admin(self):
+        return self.role == "ADMIN"
+
+    @property
+    def is_manager(self):
+        return self.role == "MANAGER"
+
+    @property
+    def is_employee(self):
+        return self.role == "EMPLOYEE"
+
+    @property
+    def is_individual(self):
+        return self.role == "INDIVIDUAL"
