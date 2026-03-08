@@ -1,6 +1,7 @@
 from django.db import models
 
 # Create your models here.
+from django.utils import timezone
 from companies.models import Company, Branch
 from projects.models import Project
 from tasks.models import Task
@@ -79,3 +80,47 @@ class AnalyticsSnapshot(models.Model):
 
     class Meta:
         ordering = ["-generated_at"]
+
+
+
+
+
+
+class AIInsight(models.Model):
+
+    INSIGHT_TYPES = (
+        ("COMPANY_SUMMARY", "Company Summary"),
+        ("PROJECT_SUMMARY", "Project Summary"),
+        ("WORKLOAD_ALERT", "Workload Alert"),
+        ("RISK_ALERT", "Risk Alert"),
+    )
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="ai_insights"
+    )
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="ai_insights"
+    )
+
+    insight_type = models.CharField(
+        max_length=30,
+        choices=INSIGHT_TYPES
+    )
+
+    title = models.CharField(max_length=255)
+    summary = models.TextField()
+
+    generated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-generated_at"]
+
+    def __str__(self):
+        return self.title

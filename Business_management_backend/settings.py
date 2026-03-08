@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     'analytics_ai',
     'auditlogs',
     'activity',
+    'comments',
 ]
 
 

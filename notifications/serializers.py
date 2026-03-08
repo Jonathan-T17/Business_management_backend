@@ -3,7 +3,12 @@ from .models import Notification
 
 
 class NotificationSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = Notification
         fields = "__all__"
-        read_only_fields = ("company", "user", "created_at")
+        read_only_fields = [
+            "recipient",
+            "company",
+            "created_at",
+        ]
