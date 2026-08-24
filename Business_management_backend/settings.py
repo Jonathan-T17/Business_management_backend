@@ -15,7 +15,7 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# regisrer custom user model
+# register custom user model
 AUTH_USER_MODEL = 'users.User'
 
 
@@ -28,7 +28,7 @@ from decouple import config
 SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', cast=bool)
+DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS').split(',')
 
@@ -48,19 +48,23 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'drf_spectacular',
+    'rest_framework_simplejwt.token_blacklist',
 
     # Local apps
+    'core',
+    'organizations',
+    'security',
     'users',
     'companies',
     'projects',
     'tasks',
     'reports',
-    'notifications',
+    'notifications.apps.NotificationsConfig', # used AppConfig here
     'subscriptions',
     'analytics_ai',
-    'auditlogs',
     'activity',
     'comments',
+    'platform_admin',
 ]
 
 
@@ -143,6 +147,17 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
     ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '5/minute',
+        'login': '10/minute',
+        'invite': '5/minute',
+        'report': '5/minute',
+    },
+    "BLACKLIST_AFTER_ROTATION": True,
 }
 
 from datetime import timedelta
@@ -159,6 +174,34 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Secure SaaS backend with AI analytics',
     'VERSION': '1.0.0',
 }
+
+
+# Allow your frontend origin
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:3000",  # Next.js dev server
+# ]
+CORS_ALLOW_ALL_ORIGINS = config(
+    'CORS_ALLOW_ALL_ORIGINS',
+    default=False,
+    cast=bool,
+)
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in config('CORS_ALLOWED_ORIGINS', default='').split(',')
+    if origin.strip()
+]
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+
+
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
@@ -181,3 +224,48 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+PASSWORD_RESET_TIMEOUT = 60 * 60 * 24  # 24 hours in seconds
+
+
+
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND",
+    default="django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = config("EMAIL_HOST", default="")
+EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+EMAIL_USE_SSL = config("EMAIL_USE_SSL", default=False, cast=bool)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+DEFAULT_FROM_EMAIL = config(
+    "DEFAULT_FROM_EMAIL",
+    default="Business Management System <noreply@gmail.com>",
+)
+
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
+
+
+
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "audit_file": {
+            "class": "logging.FileHandler",
+            "filename": "audit.log",
+        },
+    },
+    "loggers": {
+        "audit": {
+            "handlers": ["audit_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
+

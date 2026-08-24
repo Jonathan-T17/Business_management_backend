@@ -1,0 +1,15 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<h2>Security digest</h2>
+
+<p>Here is a summary of recent security events:</p>
+
+<ul>
+{% for line in digest_lines %}
+    <li>{{ line }}</li>
+{% empty %}
+    <li>No security events were recorded.</li>
+{% endfor %}
+</ul>
+{% endblock %}

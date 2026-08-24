@@ -1,0 +1,21 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<h2>Report notification</h2>
+
+<p>Hello{% if recipient %} {{ recipient.full_name }}{% endif %},</p>
+
+{% if report %}
+<p><strong>{{ report.title }}</strong></p>
+<p>{{ report.description|truncatewords:60 }}</p>
+<p>Type: {{ report.get_report_type_display }}</p>
+{% endif %}
+
+{% if comment %}
+<p><strong>Comment:</strong> {{ comment.comment }}</p>
+{% endif %}
+
+{% if action_url %}
+<p><a href="{{ action_url }}">Open report</a></p>
+{% endif %}
+{% endblock %}

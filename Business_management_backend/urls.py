@@ -16,16 +16,16 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-    )
+from rest_framework_simplejwt.views import TokenRefreshView
+from users.auth_views import CustomLoginView
+from core.views import DashboardView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/', CustomLoginView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/dashboard/', DashboardView.as_view(), name='dashboard'),
 
     
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
@@ -40,7 +40,11 @@ urlpatterns = [
     path('api/', include('comments.urls')),
     path('api/', include('activity.urls')),
     path('api/', include('notifications.urls')),
-    path('api/', include('analytics_ai.urls')),
+    path('api/analytics/', include('analytics_ai.urls')),
     path('api/', include('subscriptions.urls')),
+    path('api/', include('security.urls')),
+    path('api/organizations/', include('organizations.urls')),
+    path('api/', include('organizations.urls')),
+    path("api/platform/", include("platform_admin.urls")),
     
 ]

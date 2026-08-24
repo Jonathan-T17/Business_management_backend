@@ -1,0 +1,19 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<h2>Project update</h2>
+
+<p>Hello{% if recipient %} {{ recipient.full_name }}{% endif %},</p>
+
+{% if project %}
+<p>You have been added to or removed from the project <strong>{{ project.name }}</strong>.</p>
+{% endif %}
+
+{% if membership %}
+<p>Project role: <strong>{{ membership.role }}</strong>.</p>
+{% endif %}
+
+{% if action_url %}
+<p><a href="{{ action_url }}">Open project</a></p>
+{% endif %}
+{% endblock %}

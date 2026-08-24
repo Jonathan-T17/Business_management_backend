@@ -1,0 +1,23 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<h2>Employment status updated</h2>
+
+<p>Hello{% if recipient %} {{ recipient.full_name }}{% endif %},</p>
+
+{% if profile %}
+<p>Your employee profile{% if profile.employee_id %} ({{ profile.employee_id }}){% endif %} was updated.</p>
+{% endif %}
+
+{% if manager %}
+<p>Your new manager is <strong>{{ manager.full_name }}</strong>.</p>
+{% endif %}
+
+{% if reason %}
+<p><strong>Reason:</strong> {{ reason }}</p>
+{% endif %}
+
+{% if url %}
+<p><a href="{{ url }}">View employee profile</a></p>
+{% endif %}
+{% endblock %}

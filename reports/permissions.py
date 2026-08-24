@@ -1,17 +1,21 @@
-def can_view_report(user, report):
-    if user.role == 'SUPERUSER':
-        return True
+from rest_framework.permissions import BasePermission
 
-    if report.visibility == 'PRIVATE':
-        return report.created_by == user
+from core.visibility import VisibilityService
 
-    if report.visibility == 'COMPANY':
-        return user.company == report.company
 
-    if report.visibility == 'BRANCH':
-        return user.branch == report.branch
+class CanViewReport(BasePermission):
+    """
+    Object-level report visibility permission.
+    """
 
-    if report.visibility == 'PROJECT':
-        return report.project and report.project.company == user.company
+    def has_permission(self, request, view):
+        return request.user.is_authenticated
 
-    return False
+    def has_object_permission(self, request, view, obj):
+        return VisibilityService.can_view_report(
+            request.user,
+            obj,
+        )
+
+
+can_view_report = VisibilityService.can_view_report

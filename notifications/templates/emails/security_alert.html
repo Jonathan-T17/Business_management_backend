@@ -1,0 +1,13 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<h2>Security alert</h2>
+
+<p>Hello{% if recipient %} {{ recipient.full_name }}{% endif %},</p>
+
+<p>{{ security_message|default:"A security event occurred on your account." }}</p>
+
+<p style="color:#6b7280;font-size:13px;">
+    If you do not recognize this activity, change your password and contact your administrator.
+</p>
+{% endblock %}

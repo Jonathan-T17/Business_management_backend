@@ -1,0 +1,57 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+
+<h2>New task assigned</h2>
+
+<p>
+    Hello {{ recipient.full_name }},
+</p>
+
+<p>
+    You have been assigned to:
+</p>
+
+<h3>
+    {{ task.title }}
+</h3>
+
+{% if task.project %}
+<p>
+    <strong>Project:</strong>
+    {{ task.project.name }}
+</p>
+{% endif %}
+
+{% if task.due_date %}
+<p>
+    <strong>Due date:</strong>
+    {{ task.due_date }}
+</p>
+{% endif %}
+
+{% if assigned_by %}
+<p>
+    <strong>Assigned by:</strong>
+    {{ assigned_by.full_name }}
+</p>
+{% endif %}
+
+{% if action_url %}
+<p style="margin-top:28px;">
+    <a
+        href="{{ action_url }}"
+        style="
+            background:#2563eb;
+            color:white;
+            text-decoration:none;
+            padding:12px 20px;
+            border-radius:8px;
+        "
+    >
+        Open Task
+    </a>
+</p>
+{% endif %}
+
+{% endblock %}

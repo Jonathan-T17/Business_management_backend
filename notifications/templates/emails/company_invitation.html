@@ -1,0 +1,49 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+
+<h2>
+    You're invited to join
+    {{ company.name }}
+</h2>
+
+<p>
+    Hello,
+</p>
+
+<p>
+    You have been invited to join
+    <strong>{{ company.name }}</strong>
+    as
+    <strong>{{ invite.role }}</strong>.
+</p>
+
+<p>
+    Use the button below to accept
+    the invitation and access the
+    company workspace.
+</p>
+
+<p style="margin:28px 0;">
+    <a
+        href="{{ invite_url }}"
+        style="
+            display:inline-block;
+            background:#2563eb;
+            color:#ffffff;
+            text-decoration:none;
+            padding:12px 20px;
+            border-radius:8px;
+            font-weight:bold;
+        "
+    >
+        Accept Invitation
+    </a>
+</p>
+
+<p style="font-size:13px;color:#6b7280;">
+    This invitation expires on
+    {{ invite.expires_at }}.
+</p>
+
+{% endblock %}

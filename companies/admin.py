@@ -16,6 +16,6 @@ class BranchAdmin(admin.ModelAdmin):
 
 @admin.register(CompanyInvite)
 class CompanyInviteAdmin(admin.ModelAdmin):
-    list_display = ('email', 'company', 'role', 'is_used', 'expires_at')
-    list_filter = ('company', 'role', 'is_used')
-    search_fields = ('email',)
+    list_display = ('email', 'company', 'role', 'status', 'expires_at', 'accepted_at')
+    list_filter = ('company', 'role', 'status', 'expires_at')
+    search_fields = ('email', "company__name")
