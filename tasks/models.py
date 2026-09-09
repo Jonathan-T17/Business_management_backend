@@ -1,4 +1,7 @@
 from django.conf import settings
+from django.contrib.contenttypes.fields import (
+    GenericRelation,
+)
 from django.db import models
 from django.utils import timezone
 
@@ -54,6 +57,11 @@ class Task(models.Model):
         User,
         related_name="assigned_tasks",
         blank=True,
+    )
+
+    attachments = GenericRelation(
+        "documents.Attachment",
+        related_query_name="tasks",
     )
 
     status = models.CharField(

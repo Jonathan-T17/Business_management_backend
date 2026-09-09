@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    env_file: .env.production
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis_data:/data]
+  backend:
+    build:
+      context: .
+      dockerfile: deployment/backend.Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_started}
+    command: gunicorn Business_management_backend.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60
+  worker:
+    build:
+      context: .
+      dockerfile: deployment/backend.Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on: [backend, redis]
+    command: celery -A Business_management_backend worker -l INFO
+  scheduler:
+    build:
+      context: .
+      dockerfile: deployment/backend.Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on: [backend, redis]
+    command: celery -A Business_management_backend beat -l INFO
+volumes:
+  postgres_data:
+  redis_data:

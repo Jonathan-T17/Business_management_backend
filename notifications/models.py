@@ -31,6 +31,13 @@ class Notification(models.Model):
     MEMBERSHIP_UPDATED = "MEMBERSHIP_UPDATED"
     ROLE_CHANGED = "ROLE_CHANGED"
 
+    
+    WORKFLOW_ACTION = "WORKFLOW_ACTION"
+    REQUEST_UPDATE = "REQUEST_UPDATE"
+    REPORT_DUE = "REPORT_DUE"
+    REPORT_OVERDUE = "REPORT_OVERDUE"
+
+
     REPORT_CREATED = "REPORT_CREATED"
     REPORT_SUBMITTED = "REPORT_SUBMITTED"
     REPORT_COMMENT = "REPORT_COMMENT"
@@ -41,6 +48,14 @@ class Notification(models.Model):
     INVITATION = "INVITATION"
 
     SECURITY = "SECURITY"
+    NEW_LOGIN = "NEW_LOGIN"
+    OTP_SUCCESS = "OTP_SUCCESS"
+    OTP_FAILED = "OTP_FAILED"
+    OTP_EXPIRED = "OTP_EXPIRED"
+    OTP_DELIVERY = "OTP_DELIVERY"
+    ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
+    ACCOUNT_INTERVENTION = "ACCOUNT_INTERVENTION"
+    SECURITY_DIGEST = "SECURITY_DIGEST"
     SYSTEM = "SYSTEM"
     AI_INSIGHT = "AI_INSIGHT"
 
@@ -70,8 +85,20 @@ class Notification(models.Model):
         (INVITATION, "Company Invitation"),
 
         (SECURITY, "Security Event"),
+        (NEW_LOGIN, "New Login Detected"),
+        (OTP_SUCCESS, "OTP Verified"),
+        (OTP_FAILED, "OTP Failed"),
+        (OTP_EXPIRED, "OTP Expired"),
+        (OTP_DELIVERY, "OTP Delivery"),
+        (ACCOUNT_LOCKED, "Account Locked"),
+        (ACCOUNT_INTERVENTION, "Account Intervention"),
+        (SECURITY_DIGEST, "Security Digest"),
         (SYSTEM, "System Notification"),
         (AI_INSIGHT, "AI Insight"),
+        (WORKFLOW_ACTION, "Workflow Action"),
+        (REQUEST_UPDATE, "Request Update"),
+        (REPORT_DUE, "Report Due"),
+        (REPORT_OVERDUE, "Report Overdue"),
     )
 
     id = models.UUIDField(
@@ -89,6 +116,8 @@ class Notification(models.Model):
     company = models.ForeignKey(
         "companies.Company",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="notifications",
     )
 

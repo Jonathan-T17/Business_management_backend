@@ -1,3 +1,4 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
@@ -5,8 +6,14 @@ from .views import (
     TeamViewSet,
     PositionViewSet,
     EmployeeProfileViewSet,
+    EmployeeDelegationViewSet,
+    EmployeeCompensationViewSet,
+    UserCapabilityGrantViewSet,
+    PositionCapabilityGrantViewSet,
     EmployeeTransferViewSet,
     EmployeeNoteViewSet,
+    CapabilityCatalogueView,
+    RolePresetView,
 )
 
 
@@ -43,10 +50,47 @@ router.register(
 )
 
 router.register(
+    r"employee-delegations",
+    EmployeeDelegationViewSet,
+    basename="organization-employee-delegation",
+)
+
+router.register(
+    r"employee-compensations",
+    EmployeeCompensationViewSet,
+    basename="employee-compensation",
+)
+
+router.register(
+    r"capability-grants",
+    UserCapabilityGrantViewSet,
+    basename="capability-grant",
+)
+
+router.register(
+    r"position-capability-grants",
+    PositionCapabilityGrantViewSet,
+    basename="position-capability-grant",
+)
+
+router.register(
     r"employee-notes",
     EmployeeNoteViewSet,
     basename="organization-employee-note",
 )
 
 
-urlpatterns = router.urls
+urlpatterns = [
+    path(
+        "capabilities/catalog/",
+        CapabilityCatalogueView.as_view(),
+        name="capability-catalogue",
+    ),
+    path(
+        "role-presets/apply/",
+        RolePresetView.as_view(),
+        name="role-preset-apply",
+    ),
+]
+
+urlpatterns += router.urls

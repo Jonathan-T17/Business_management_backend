@@ -19,6 +19,11 @@ from projects.models import ProjectMembership
 from subscriptions.services import SubscriptionService
 from users.models import User
 
+from rest_framework.exceptions import ValidationError
+
+from workflows.models import WorkflowDefinition
+from workflows.services import WorkflowService
+
 from .models import Report, ReportComment
 from .serializers import (
     ReportSerializer,
@@ -55,7 +60,10 @@ class ReportViewSet(SecureModelViewSet):
             )
         return (
             VisibilityService
-            .reports(self.request.user)
+            .reports_queryset(
+                user=self.request.user,
+                queryset=self.queryset,
+            )
             .select_related(
                 "created_by",
                 "company",
@@ -395,6 +403,89 @@ class ReportViewSet(SecureModelViewSet):
                 ),
                 reference_id=str(report.id),
             )
+
+
+
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="submit",
+    )
+    def submit(
+        self,
+        request,
+        pk=None,
+    ):
+    
+        report = self.get_object()
+    
+        if report.created_by != request.user:
+            raise ValidationError(
+                "Only the report author can submit this report."
+            )
+    
+        if report.status not in (
+            "DRAFT",
+            "RETURNED",
+        ):
+            raise ValidationError(
+                "This report cannot be submitted in its current status."
+            )
+    
+        workflow_id = request.data.get(
+            "workflow"
+        )
+    
+        if not workflow_id:
+            raise ValidationError({
+                "workflow":
+                    "Workflow is required."
+            })
+    
+        try:
+            workflow = (
+                WorkflowDefinition.objects.get(
+                    id=workflow_id,
+                    company=report.company,
+                    target_type="REPORT",
+                    is_active=True,
+                )
+            )
+    
+        except WorkflowDefinition.DoesNotExist:
+    
+            raise ValidationError({
+                "workflow":
+                    "Invalid report workflow."
+            })
+    
+        instance = WorkflowService.start(
+            workflow=workflow,
+            target=report,
+            submitted_by=request.user,
+            request=request,
+        )
+    
+        report.refresh_from_db()
+    
+        return Response(
+            {
+                "message":
+                    "Report submitted successfully.",
+    
+                "report_id":
+                    str(report.id),
+    
+                "report_status":
+                    report.status,
+    
+                "workflow_instance":
+                    instance.id,
+            },
+            status=
+                status.HTTP_200_OK,
+        )
 
 
 # ============================================================

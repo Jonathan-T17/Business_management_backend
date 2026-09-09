@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from .models import Notification, NotificationPreference
 from .permissions import IsNotificationOwner
+from core.authorization import Authorization
 from .serializers import NotificationPreferenceSerializer, NotificationSerializer
 from rest_framework.generics import (RetrieveUpdateAPIView)
 
@@ -59,21 +60,16 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
         if not user.is_authenticated:
             return Notification.objects.none()
 
-        company = getattr(
-            user,
-            "company",
-            None,
-        )
+        queryset = Notification.objects.filter(recipient=user)
 
-        if company is None:
-            return Notification.objects.none()
+        if not Authorization.is_platform_superuser(user):
+            company = getattr(user, "company", None)
+            if company is None:
+                return Notification.objects.none()
+            queryset = queryset.filter(company=company)
 
         return (
-            Notification.objects
-            .filter(
-                recipient=user,
-                company=company,
-            )
+            queryset
             .select_related(
                 "recipient",
                 "company",
@@ -88,7 +84,7 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
         Example: /api/notifications/security-digest?cadence=daily
         """
         user = request.user
-        if not user.is_superuser:
+        if not Authorization.is_platform_superuser(user):
             return Response(
                 {"detail": "Only superusers can access the security digest."},
                 status=status.HTTP_403_FORBIDDEN,

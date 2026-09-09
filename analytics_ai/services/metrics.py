@@ -15,3 +15,26 @@ def calculate_task_metrics(queryset):
         "completed": completed,
         "overdue": overdue,
     }
+
+
+def plan_progress(plan):
+    total = plan.items.count()
+
+    completed = plan.items.filter(
+        status="COMPLETED"
+    ).count()
+
+    percentage = (
+        completed / total * 100
+        if total
+        else 0
+    )
+
+    return {
+        "total": total,
+        "completed": completed,
+        "percentage": round(
+            percentage,
+            2,
+        ),
+    }

@@ -7,6 +7,11 @@ from .models import (
     EmployeeProfile,
     EmployeeTransfer,
     EmployeeNote,
+    EmployeeDelegation,
+    EmployeeReplacement,
+    EmployeeCompensation,
+    UserCapabilityGrant,
+    PositionCapabilityGrant,
 )
 
 
@@ -71,6 +76,142 @@ class DepartmentSerializer(serializers.ModelSerializer):
                 })
 
         return attrs
+
+
+class EmployeeDelegationSerializer(serializers.ModelSerializer):
+
+    from_user_name = serializers.CharField(
+        source="from_user.full_name",
+        read_only=True,
+    )
+
+    to_user_name = serializers.CharField(
+        source="to_user.full_name",
+        read_only=True,
+    )
+
+    class Meta:
+        model = EmployeeDelegation
+
+        fields = "__all__"
+
+        read_only_fields = (
+            "company",
+            "created_by",
+            "status",
+            "created_at",
+        )
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        from_user = attrs.get("from_user")
+        to_user = attrs.get("to_user")
+
+        if (
+            from_user.company_id != request.user.company_id
+            or to_user.company_id != request.user.company_id
+        ):
+            raise serializers.ValidationError(
+                "Delegation users must belong to your company."
+            )
+
+        return attrs
+
+
+class EmployeeReplacementSerializer(serializers.ModelSerializer):
+
+    outgoing_name = serializers.CharField(
+        source="outgoing_employee.user.full_name",
+        read_only=True,
+    )
+
+    incoming_name = serializers.CharField(
+        source="incoming_employee.user.full_name",
+        read_only=True,
+    )
+
+    class Meta:
+        model = EmployeeReplacement
+
+        fields = "__all__"
+
+        read_only_fields = (
+            "company",
+            "performed_by",
+            "status",
+            "created_at",
+            "completed_at",
+        )
+
+
+class EmployeeCompensationSerializer(serializers.ModelSerializer):
+
+    employee_name = serializers.CharField(
+        source="employee.user.full_name",
+        read_only=True,
+    )
+    employee_email = serializers.CharField(
+        source="employee.user.email",
+        read_only=True,
+    )
+    employee_id_display = serializers.CharField(
+        source="employee.employee_id",
+        read_only=True,
+    )
+    gross_fixed_compensation = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        read_only=True,
+    )
+
+    class Meta:
+        model = EmployeeCompensation
+        fields = (
+            "id", "employee", "employee_name", "employee_email",
+            "employee_id_display", "company", "base_salary", "currency",
+            "housing_allowance", "transport_allowance", "other_allowance",
+            "gross_fixed_compensation", "effective_from", "effective_to",
+            "notes", "is_current", "created_by", "created_at", "updated_at",
+        )
+        read_only_fields = (
+            "company", "is_current", "created_by", "created_at", "updated_at",
+        )
+
+
+class UserCapabilityGrantSerializer(serializers.ModelSerializer):
+
+    user_name = serializers.CharField(source="user.full_name", read_only=True)
+    user_email = serializers.CharField(source="user.email", read_only=True)
+
+    class Meta:
+        model = UserCapabilityGrant
+        fields = (
+            "id", "company", "user", "user_name", "user_email", "capability",
+            "reason", "is_active", "granted_by", "created_at", "revoked_at",
+            "revoked_by",
+        )
+        read_only_fields = (
+            "company", "is_active", "granted_by", "created_at", "revoked_at",
+            "revoked_by",
+        )
+
+
+class PositionCapabilityGrantSerializer(serializers.ModelSerializer):
+
+    position_name = serializers.CharField(
+        source="position.title",
+        read_only=True,
+    )
+
+    class Meta:
+        model = PositionCapabilityGrant
+        fields = (
+            "id", "company", "position", "position_name", "capability",
+            "reason", "is_active", "granted_by", "created_at",
+        )
+        read_only_fields = (
+            "company", "is_active", "granted_by", "created_at",
+        )
 
 
 class TeamSerializer(serializers.ModelSerializer):

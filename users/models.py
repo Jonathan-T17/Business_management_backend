@@ -7,6 +7,14 @@ from core.roles import Roles
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    ACCOUNT_STATES = (
+        ("PENDING_VERIFICATION", "Pending verification"),
+        ("ACTIVE", "Active"),
+        ("SUSPENDED", "Suspended"),
+        ("DEACTIVATED", "Deactivated"),
+        ("TERMINATED", "Terminated"),
+    )
+
     role = models.CharField(
         max_length=20,
         choices=Roles.choices(),
@@ -26,6 +34,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_login_ip = models.GenericIPAddressField(blank=True, null=True)
     last_activity = models.DateTimeField(null=True, blank=True)
     mfa_enabled = models.BooleanField(default=False)
+    must_change_password = models.BooleanField(
+        default=False,
+    )
+    password_reset_required_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
 
     # Soft delete fields
     is_deleted = models.BooleanField(default=False)
@@ -49,6 +64,12 @@ class User(AbstractBaseUser, PermissionsMixin):
         related_name='users'
     )
 
+    account_state = models.CharField(
+        max_length=30,
+        choices=ACCOUNT_STATES,
+        default="PENDING_VERIFICATION",
+        db_index=True,
+    )
     is_active = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
     email_verified = models.BooleanField(default=False)
@@ -64,8 +85,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.email
 
     def save(self, *args, **kwargs):
-        # Automatically grant admin-site access
-        if self.role in [Roles.SUPERUSER, Roles.ADMIN]:
+        # Django Admin is a platform/internal surface. Tenant ADMIN does not
+        # automatically receive Django-admin access.
+        if self.role == Roles.SUPERUSER or self.is_superuser:
             self.is_staff = True
         super().save(*args, **kwargs)
 
@@ -78,9 +100,10 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def restore(self):
         self.is_deleted = False
-        self.is_active = True
+        self.is_active = False
+        self.account_state = "DEACTIVATED"
         self.deleted_at = None
-        self.save(update_fields=["is_deleted", "is_active", "deleted_at"])
+        self.save(update_fields=["is_deleted", "is_active", "account_state", "deleted_at"])
 
     # ✅ Role helpers
     @property

@@ -1,50 +1,105 @@
-"""
-URL configuration for Business_management_backend project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
-from rest_framework_simplejwt.views import TokenRefreshView
+from users.views import ActiveCompanyTokenRefreshView
 from users.auth_views import CustomLoginView
 from core.views import DashboardView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+API_PREFIX = "api/v1/"
+
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/token/', CustomLoginView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('api/dashboard/', DashboardView.as_view(), name='dashboard'),
+    # =========================================================
+    # INTERNAL DJANGO ADMIN
+    # =========================================================
+    path("internal/admin/", admin.site.urls),
 
-    
-    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    # =========================================================
+    # AUTHENTICATION
+    # =========================================================
+    path(API_PREFIX + "auth/token/", CustomLoginView.as_view(), name="token-obtain"),
+    path(API_PREFIX + "auth/token/refresh/", ActiveCompanyTokenRefreshView.as_view(), name="token-refresh"),
 
+    # =========================================================
+    # TENANT DASHBOARD
+    # =========================================================
+    path(API_PREFIX + "dashboard/", DashboardView.as_view(), name="dashboard"),
 
-    path('api/', include('users.urls')),
-    path('api/', include('companies.urls')),
-    path('api/', include('projects.urls')),
-    path('api/', include('tasks.urls')),
-    path('api/', include('reports.urls')),
-    path('api/', include('comments.urls')),
-    path('api/', include('activity.urls')),
-    path('api/', include('notifications.urls')),
-    path('api/analytics/', include('analytics_ai.urls')),
-    path('api/', include('subscriptions.urls')),
-    path('api/', include('security.urls')),
-    path('api/organizations/', include('organizations.urls')),
-    path('api/', include('organizations.urls')),
-    path("api/platform/", include("platform_admin.urls")),
-    
+    # =========================================================
+    # IDENTITY / COMPANY
+    # =========================================================
+    path(API_PREFIX, include("users.urls")),
+    path(API_PREFIX, include("companies.urls")),
+    path(API_PREFIX + "company-setup/", include("company_setup.urls")),
+    path(API_PREFIX + "organizations/", include("organizations.urls")),
+
+    # =========================================================
+    # PROJECTS / TASKS / COMMENTS
+    # =========================================================
+    path(API_PREFIX, include("projects.urls")),
+    path(API_PREFIX, include("tasks.urls")),
+    path(API_PREFIX, include("comments.urls")),
+
+    # =========================================================
+    # REPORTING / WORKFLOWS
+    # =========================================================
+    path(API_PREFIX, include("reports.urls")),
+    path(API_PREFIX, include("workflows.urls")),
+    path(API_PREFIX, include("forms_engine.urls")),
+    path(API_PREFIX, include("reporting_schedules.urls")),
+
+    # =========================================================
+    # BUSINESS OPERATIONS
+    # =========================================================
+    path(API_PREFIX, include("planning.urls")),
+    path(API_PREFIX, include("requests_app.urls")),
+    path(API_PREFIX, include("field_operations.urls")),
+
+    # =========================================================
+    # DOCUMENTS / RECORDS
+    # =========================================================
+    path(API_PREFIX, include("documents.urls")),
+    path(API_PREFIX, include("records_management.urls")),
+
+    # =========================================================
+    # ACTIVITY / NOTIFICATIONS
+    # =========================================================
+    path(API_PREFIX, include("activity.urls")),
+    path(API_PREFIX, include("notifications.urls")),
+
+    # =========================================================
+    # ANALYTICS / AI
+    # =========================================================
+    path(API_PREFIX + "analytics/", include("analytics_ai.urls")),
+
+    # =========================================================
+    # CHAT
+    # =========================================================
+    path(API_PREFIX + "chat/", include("chat.urls")),
+
+    # =========================================================
+    # SUBSCRIPTIONS / SECURITY
+    # =========================================================
+    path(API_PREFIX, include("subscriptions.urls")),
+    path(API_PREFIX, include("security.urls")),
+
+    # =========================================================
+    # DATA TOOLS / SUPPORT
+    # =========================================================
+    path(API_PREFIX, include("data_tools.urls")),
+    path(API_PREFIX, include("support.urls")),
+
+    # =========================================================
+    # PLATFORM CONTROL CENTER
+    # =========================================================
+    path("api/platform/v1/", include("platform_admin.urls")),
 ]
+
+# =============================================================
+# DEVELOPMENT API DOCUMENTATION
+# =============================================================
+if settings.DEBUG:
+    urlpatterns += [
+        path(API_PREFIX + "schema/", SpectacularAPIView.as_view(), name="schema"),
+        path(API_PREFIX + "docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    ]

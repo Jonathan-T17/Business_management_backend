@@ -1,4 +1,7 @@
 from django.conf import settings
+from django.contrib.contenttypes.fields import (
+    GenericRelation,
+)
 from django.db import models
 
 from companies.models import Company, Branch
@@ -47,6 +50,11 @@ class Project(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         related_name="created_projects",
+    )
+
+    attachments = GenericRelation(
+        "documents.Attachment",
+        related_query_name="projects",
     )
 
     is_active = models.BooleanField(

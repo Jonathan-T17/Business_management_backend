@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from django.db import transaction
@@ -13,17 +14,23 @@ from django.utils.encoding import force_bytes
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied
 
 from core.tenant import TenantService
+from core.authorization import Authorization
+from core.roles import Roles
 from security.models import ActiveSession
-from security.services import create_audit_log, record_login
+from security.services import create_audit_log, record_login, terminate_user_sessions
+from security.utils import get_client_ip
 
 from .models import User
+from .services import TenantUserLifecycleService
 from .serializers import (
     UserSerializer,
     UserUpdateSerializer,
     UserRegisterSerializer,
     CustomTokenObtainPairSerializer,
+    ActiveCompanyTokenRefreshSerializer,
 )
 
 from core.permissions import IsSuperUserOrCompanyAdmin
@@ -34,6 +41,23 @@ from .permissions import IsSelf
 from rest_framework.decorators import action
 
 User = get_user_model()
+
+
+def _is_last_active_company_admin(user):
+    if user is None or not getattr(user, "company_id", None) or user.role != Roles.ADMIN:
+        return False
+
+    return not User.objects.filter(
+        company_id=user.company_id,
+        role=Roles.ADMIN,
+        is_active=True,
+        is_deleted=False,
+    ).exclude(pk=user.pk).exists()
+
+
+def _guard_last_company_admin(target_user, action_label):
+    if target_user.role == Roles.ADMIN and _is_last_active_company_admin(target_user):
+        raise ValidationError(f"Cannot {action_label} the last active company administrator.")
 
 
 # ================= USERS =================
@@ -85,7 +109,7 @@ class RegisterView(APIView):
                 user = serializer.save()
                 token = email_verification_token.make_token(user)
 
-                send_verification_email(user, token)
+                transaction.on_commit(lambda: send_verification_email(user, token))
 
                 SecurityAudit.log(
                     user=user,
@@ -128,9 +152,7 @@ class VerifyEmailView(APIView):
             return Response({"message": "Email already verified"}, status=400)
 
         if email_verification_token.check_token(user, token):
-            user.is_active = True
-            user.email_verified = True
-            user.save()
+            TenantUserLifecycleService.verify_email(user=user, request=request)
 
             SecurityAudit.log(
                 user=user,
@@ -183,6 +205,10 @@ class ResendVerificationView(APIView):
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+
+
+class ActiveCompanyTokenRefreshView(TokenRefreshView):
+    serializer_class = ActiveCompanyTokenRefreshSerializer
 
 
 # ================= PASSWORD RESET =================
@@ -240,8 +266,9 @@ class ConfirmPasswordResetView(APIView):
         except ValidationError as e:
             return Response({"error": e.messages}, status=400)
 
-        user.set_password(new_password)
-        user.save()
+        TenantUserLifecycleService.password_reset_completed(
+            user=user, new_password=new_password, request=request
+        )
 
         SecurityAudit.log(
             user=user,
@@ -338,14 +365,14 @@ class VerifyOTPView(APIView):
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            return Response({"error": "User not found"}, status=400)
+            return Response({"error": "Invalid or expired OTP"}, status=400)
 
         ua = parse(request.META.get("HTTP_USER_AGENT", ""))
         fingerprint = f"{ua.browser.family}-{ua.os.family}-{ua.device.family}"
 
         if not verify_otp(user, code, fingerprint):
             # Failed OTP
-            register_failed_attempt(email, request.META.get("REMOTE_ADDR"), reason="Invalid OTP")
+            register_failed_attempt(email, get_client_ip(request), reason="Invalid OTP")
             SecurityAudit.log(
                 user=user,
                 action="SECURITY",
@@ -356,7 +383,7 @@ class VerifyOTPView(APIView):
             return Response({"error": "Invalid or expired OTP"}, status=400)
 
         # Clear failed attempts on success
-        clear_failed_attempts(email, request.META.get("REMOTE_ADDR"))
+        clear_failed_attempts(email, get_client_ip(request))
 
         # Trust device if user opts in
         if request.data.get("trust_device"):
@@ -368,6 +395,10 @@ class VerifyOTPView(APIView):
                     "is_active": True,
                 },
             )
+
+        # Re-check current account/company state immediately before token issuance.
+        if not Authorization.can_authenticate(user):
+            return Response({"error": "Invalid or expired OTP"}, status=400)
 
         # Issue tokens
         refresh = RefreshToken.for_user(user)
@@ -407,43 +438,47 @@ class DeactivateUserView(APIView):
 
     def post(self, request, user_id):
         try:
-            user = User.objects.get(pk=user_id, company=request.user.company)
-            user.is_active = False
-            user.save()
-
-            SecurityAudit.log(
-                user=user,
-                action="USER",
-                request=request,
-                description="User deactivated",
-                status="SUCCESS"
+            target = User.objects.filter(pk=user_id, company=request.user.company).get()
+            TenantUserLifecycleService.deactivate(
+                actor=request.user, target=target,
+                reason=request.data.get("reason", "").strip(), request=request,
             )
-
             return Response({"message": "User deactivated"}, status=200)
+        except ValidationError as exc:
+            return Response({"error": str(exc)}, status=400)
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=404)
 
+
+class ActivateUserView(APIView):
+    permission_classes = [IsAuthenticated, IsSuperUserOrCompanyAdmin]
+
+    def post(self, request, user_id):
+        try:
+            target = User.objects.filter(pk=user_id, company=request.user.company).get()
+            TenantUserLifecycleService.reactivate(
+                actor=request.user, target=target,
+                reason=request.data.get("reason", "").strip(), request=request,
+            )
+            return Response({"message": "User activated"}, status=200)
+        except ValidationError as exc:
+            return Response({"error": str(exc)}, status=400)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=404)
 
 
 class ChangeUserRoleView(APIView):
     permission_classes = [IsAuthenticated, IsSuperUserOrCompanyAdmin]
 
     def post(self, request, user_id):
-        new_role = request.data.get("role")
         try:
-            user = User.objects.get(pk=user_id, company=request.user.company)
-            old_role = user.role
-            user.role = new_role
-            user.save()
-
-            SecurityAudit.log(
-                user=user,
-                action="USER",
-                request=request,
-                description=f"Role changed from {old_role} to {new_role}",
-                status="SUCCESS"
+            target = User.objects.filter(pk=user_id, company=request.user.company).get()
+            TenantUserLifecycleService.change_role(
+                actor=request.user, target=target, new_role=request.data.get("role"),
+                reason=request.data.get("reason", "").strip(), request=request,
             )
-
-            return Response({"message": "Role updated"}, status=200)
+            return Response({"message": "Role updated", "role": target.role}, status=200)
+        except ValidationError as exc:
+            return Response({"error": str(exc)}, status=400)
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=404)

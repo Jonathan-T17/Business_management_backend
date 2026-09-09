@@ -13,6 +13,7 @@ from .views import (
     PlatformSubscriptionViewSet,
     PlatformActivityViewSet,
     PlatformHealthView,
+    PlatformSettingsView,
 )
 
 
@@ -35,6 +36,12 @@ router.register(
     "security/sessions",
     PlatformActiveSessionViewSet,
     basename="platform-sessions",
+)
+
+router.register(
+    "sessions",
+    PlatformActiveSessionViewSet,
+    basename="platform-sessions-short",
 )
 
 router.register(
@@ -86,6 +93,12 @@ urlpatterns = [
         "health/",
         PlatformHealthView.as_view(),
         name="platform-health",
+    ),
+
+    path(
+        "settings/",
+        PlatformSettingsView.as_view(),
+        name="platform-settings",
     ),
 ]
 

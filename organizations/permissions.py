@@ -1,6 +1,8 @@
 from rest_framework.permissions import BasePermission
 
 from core.roles import Roles
+from core.capabilities import Capabilities
+from core.capability_service import CapabilityService
 
 
 class OrganizationPermission(BasePermission):
@@ -159,6 +161,30 @@ class IsSameBranchObject(BasePermission):
             return obj_branch == user.branch
 
         return False
+
+
+class CanViewCompensation(BasePermission):
+
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated
+            and CapabilityService.has(
+                request.user,
+                Capabilities.VIEW_COMPENSATION,
+            )
+        )
+
+
+class CanManageCompensation(BasePermission):
+
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated
+            and CapabilityService.has(
+                request.user,
+                Capabilities.MANAGE_COMPENSATION,
+            )
+        )
 
 
 class CanManageEmployees(BasePermission):

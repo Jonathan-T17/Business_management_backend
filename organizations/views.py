@@ -1,12 +1,17 @@
+from django.db import models
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from core.roles import Roles
+from core.capabilities import Capabilities
 from security.services import create_audit_log
 
 from companies.models import Branch
@@ -19,6 +24,11 @@ from .models import (
     EmployeeProfile,
     EmployeeTransfer,
     EmployeeNote,
+    EmployeeDelegation,
+    EmployeeReplacement,
+    EmployeeCompensation,
+    UserCapabilityGrant,
+    PositionCapabilityGrant,
 )
 
 from .serializers import (
@@ -28,15 +38,30 @@ from .serializers import (
     EmployeeProfileSerializer,
     EmployeeTransferSerializer,
     EmployeeNoteSerializer,
+    EmployeeDelegationSerializer,
+    EmployeeReplacementSerializer,
+    EmployeeCompensationSerializer,
+    UserCapabilityGrantSerializer,
+    PositionCapabilityGrantSerializer,
 )
 
-from .services import EmployeeService
+from .services import (
+    DelegationService,
+    EmployeeLifecycleService,
+    EmployeeReplacementService,
+    EmployeeService,
+    CompensationService,
+    CapabilityGrantService,
+)
 
 from .permissions import (
     OrganizationPermission,
     IsOrganizationAdmin,
+    IsOrganizationManager,
     CanViewOrganization,
     CanManageEmployees,
+    CanViewCompensation,
+    CanManageCompensation,
 )
 
 
@@ -495,6 +520,12 @@ class EmployeeProfileViewSet(OrganizationBaseViewSet):
     # --------------------------------------------------------
 
     def get_permissions(self):
+        if self.action == "require_password_reset":
+            return [
+                IsAuthenticated(),
+                IsOrganizationAdmin(),
+            ]
+
         if self.action in (
             "list",
             "retrieve",
@@ -561,10 +592,7 @@ class EmployeeProfileViewSet(OrganizationBaseViewSet):
     def suspend(self, request, pk=None):
         profile = self.get_object()
 
-        reason = request.data.get(
-            "reason",
-            "",
-        )
+        reason = request.data.get("reason", "").strip()
 
         EmployeeService.suspend_employee(
             profile=profile,
@@ -674,40 +702,112 @@ class EmployeeProfileViewSet(OrganizationBaseViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        EmployeeService.terminate_employee(
+        EmployeeLifecycleService.terminate(
             profile=profile,
             reason=reason,
             request=request,
         )
-
-        profile.refresh_from_db()
-
-        # Notify employee of termination
-        CommunicationService.send(
-            recipient=profile.user,
-            company=profile.company,
-            notification_type="ORGANIZATION_UPDATE",
-            title="Employment terminated",
-            message="Your employment has been terminated.",
-            reference_id=str(profile.id),
-            url=f"/employees/{profile.id}",
-            send_email=True,
-            email_subject="Employment status updated",
-            email_template="emails/organization_update.html",
-            email_context={
-                "profile": profile,
-                "reason": reason,
-            },
-        )
         return Response(
             {
-                "message": (
-                    "Employee employment terminated."
-                ),
+                "message": "Employment terminated.",
                 "employee_id": profile.employee_id,
                 "status": profile.status,
             },
             status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="leave")
+    def place_on_leave(self, request, pk=None):
+        profile = self.get_object()
+
+        EmployeeLifecycleService.place_on_leave(
+            profile=profile,
+            reason=request.data.get("reason", ""),
+            request=request,
+        )
+
+        return Response(self.get_serializer(profile).data)
+
+    @action(detail=True, methods=["post"], url_path="return-from-leave")
+    def return_from_leave(self, request, pk=None):
+        profile = self.get_object()
+
+        EmployeeLifecycleService.return_from_leave(
+            profile=profile,
+            request=request,
+        )
+
+        return Response(self.get_serializer(profile).data)
+
+    @action(detail=True, methods=["post"], url_path="require-password-reset")
+    def require_password_reset(self, request, pk=None):
+        profile = self.get_object()
+        reason = request.data.get("reason", "").strip()
+
+        if not reason:
+            return Response(
+                {"reason": "A reason is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        EmployeeLifecycleService.require_password_reset(
+            user=profile.user,
+            reason=reason,
+            request=request,
+        )
+
+        return Response({
+            "message": "Password reset requirement applied."
+        })
+
+    @action(detail=True, methods=["post"], url_path="replace")
+    def replace_employee(self, request, pk=None):
+        outgoing = self.get_object()
+        incoming_id = request.data.get("incoming_employee")
+
+        if not incoming_id:
+            return Response(
+                {"incoming_employee": "Incoming employee is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            incoming = EmployeeProfile.objects.get(
+                id=incoming_id,
+                company=outgoing.company,
+            )
+        except EmployeeProfile.DoesNotExist:
+            return Response(
+                {"incoming_employee": "Invalid incoming employee."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        replacement = EmployeeReplacementService.execute(
+            outgoing=outgoing,
+            incoming=incoming,
+            transfer_open_tasks=request.data.get("transfer_open_tasks", True),
+            transfer_project_memberships=request.data.get(
+                "transfer_project_memberships", True
+            ),
+            transfer_team_leadership=request.data.get(
+                "transfer_team_leadership", False
+            ),
+            transfer_department_management=request.data.get(
+                "transfer_department_management", False
+            ),
+            transfer_branch_management=request.data.get(
+                "transfer_branch_management", False
+            ),
+            reason=request.data.get("reason", ""),
+            performed_by=request.user,
+            request=request,
+        )
+
+        return Response(
+            EmployeeReplacementSerializer(
+                replacement,
+                context={"request": request},
+            ).data
         )
 
     # ========================================================
@@ -1200,6 +1300,329 @@ class EmployeeProfileViewSet(OrganizationBaseViewSet):
             ).data,
             status=status.HTTP_200_OK,
         )
+
+
+# ============================================================
+# Employee Delegations
+# ============================================================
+
+class EmployeeDelegationViewSet(viewsets.ModelViewSet):
+
+    serializer_class = EmployeeDelegationSerializer
+
+    permission_classes = [
+        IsAuthenticated,
+        IsOrganizationManager,
+    ]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        queryset = EmployeeDelegation.objects.select_related(
+            "company",
+            "from_user",
+            "to_user",
+            "created_by",
+        )
+
+        if user.role == Roles.SUPERUSER:
+            return queryset
+
+        queryset = queryset.filter(company=user.company)
+
+        if user.role == Roles.ADMIN:
+            return queryset
+
+        return queryset.filter(
+            models.Q(from_user=user)
+            | models.Q(to_user=user)
+        )
+
+    def perform_create(self, serializer):
+        data = serializer.validated_data
+
+        delegation = DelegationService.create(
+            from_user=data["from_user"],
+            to_user=data["to_user"],
+            permissions=data.get("permissions", []),
+            starts_at=data["starts_at"],
+            ends_at=data["ends_at"],
+            reason=data.get("reason", ""),
+            created_by=self.request.user,
+            request=self.request,
+        )
+
+        serializer.instance = delegation
+
+
+# ============================================================
+# Employee Compensation
+# ============================================================
+
+class EmployeeCompensationViewSet(viewsets.ReadOnlyModelViewSet):
+
+    serializer_class = EmployeeCompensationSerializer
+    permission_classes = [IsAuthenticated, CanViewCompensation]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = EmployeeCompensation.objects.select_related(
+            "employee",
+            "employee__user",
+            "company",
+            "created_by",
+        )
+
+        if user.role == Roles.SUPERUSER:
+            return queryset
+
+        return queryset.filter(company=user.company)
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="set",
+        permission_classes=[IsAuthenticated, CanManageCompensation],
+    )
+    def set_compensation(self, request):
+        employee_id = request.data.get("employee")
+
+        if not employee_id:
+            return Response(
+                {"employee": "Employee is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        employee_lookup = {"id": employee_id}
+        if request.user.role != Roles.SUPERUSER:
+            employee_lookup["company"] = request.user.company
+
+        try:
+            employee = EmployeeProfile.objects.get(**employee_lookup)
+        except EmployeeProfile.DoesNotExist:
+            return Response(
+                {"employee": "Invalid employee."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        required = ("base_salary", "currency", "effective_from")
+        missing = [
+            field for field in required
+            if request.data.get(field) in (None, "")
+        ]
+        if missing:
+            return Response(
+                {field: "This field is required." for field in missing},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        compensation = CompensationService.set_compensation(
+            employee=employee,
+            base_salary=request.data["base_salary"],
+            currency=request.data["currency"],
+            effective_from=request.data["effective_from"],
+            housing_allowance=request.data.get("housing_allowance", 0),
+            transport_allowance=request.data.get("transport_allowance", 0),
+            other_allowance=request.data.get("other_allowance", 0),
+            notes=request.data.get("notes", ""),
+            user=request.user,
+            request=request,
+        )
+
+        return Response(
+            self.get_serializer(compensation).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+# ============================================================
+# User Capability Grants
+# ============================================================
+
+class UserCapabilityGrantViewSet(viewsets.ReadOnlyModelViewSet):
+
+    serializer_class = UserCapabilityGrantSerializer
+    permission_classes = [IsAuthenticated, IsOrganizationAdmin]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = UserCapabilityGrant.objects.select_related(
+            "company",
+            "user",
+            "granted_by",
+            "revoked_by",
+        )
+
+        if user.role == Roles.SUPERUSER:
+            return queryset
+
+        return queryset.filter(company=user.company)
+
+    @action(detail=False, methods=["post"], url_path="grant")
+    def grant(self, request):
+        user_id = request.data.get("user")
+        capability = request.data.get("capability")
+
+        if not user_id:
+            raise ValidationError({"user": "User is required."})
+
+        if capability not in Capabilities.values():
+            raise ValidationError({"capability": "Invalid capability."})
+
+        try:
+            target_user = User.objects.get(
+                id=user_id,
+                company=request.user.company,
+            )
+        except User.DoesNotExist:
+            raise ValidationError({"user": "Invalid user."})
+
+        try:
+            grant = CapabilityGrantService.grant_user(
+                company=request.user.company,
+                target_user=target_user,
+                capability=capability,
+                actor=request.user,
+                reason=request.data.get("reason", ""),
+                request=request,
+            )
+        except DjangoValidationError as error:
+            raise ValidationError(error.messages)
+
+        return Response(self.get_serializer(grant).data)
+
+    @action(detail=True, methods=["post"], url_path="revoke")
+    def revoke(self, request, pk=None):
+        grant = self.get_object()
+
+        CapabilityGrantService.revoke_user(
+            grant=grant,
+            actor=request.user,
+            reason=request.data.get("reason", ""),
+            request=request,
+        )
+
+        return Response({"message": "Capability revoked."})
+
+
+class PositionCapabilityGrantViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = PositionCapabilityGrantSerializer
+    permission_classes = [IsAuthenticated, IsOrganizationAdmin]
+
+    def get_queryset(self):
+        queryset = PositionCapabilityGrant.objects.select_related(
+            "company",
+            "position",
+            "granted_by",
+        )
+        if self.request.user.role == Roles.SUPERUSER:
+            return queryset
+        return queryset.filter(company=self.request.user.company)
+
+    @action(detail=False, methods=["post"], url_path="grant")
+    def grant(self, request):
+        position_id = request.data.get("position")
+        capability = request.data.get("capability")
+
+        if not position_id:
+            raise ValidationError({"position": "Position is required."})
+        if capability not in Capabilities.values():
+            raise ValidationError({"capability": "Invalid capability."})
+
+        try:
+            position = Position.objects.get(
+                id=position_id,
+                company=request.user.company,
+            )
+        except Position.DoesNotExist:
+            raise ValidationError({"position": "Invalid position."})
+
+        try:
+            grant = CapabilityGrantService.grant_position(
+                company=request.user.company,
+                position=position,
+                capability=capability,
+                actor=request.user,
+                reason=request.data.get("reason", ""),
+                request=request,
+            )
+        except DjangoValidationError as error:
+            raise ValidationError(error.messages)
+        return Response(self.get_serializer(grant).data)
+
+    @action(detail=True, methods=["post"], url_path="revoke")
+    def revoke(self, request, pk=None):
+        grant = self.get_object()
+        grant.is_active = False
+        grant.save(update_fields=["is_active"])
+        create_audit_log(
+            user=request.user,
+            company=grant.company,
+            request=request,
+            action="SECURITY",
+            description=(
+                f"Capability {grant.capability} revoked from "
+                f"position {grant.position.title}."
+            ),
+            obj=grant,
+        )
+        return Response({"message": "Capability revoked."})
+
+
+class CapabilityCatalogueView(APIView):
+    permission_classes = [IsAuthenticated, IsOrganizationAdmin]
+
+    def get(self, request):
+        return Response({
+            "capabilities": Capabilities.catalogue(),
+            "presets": [
+                {
+                    "code": code,
+                    "name": code.replace("_", " ").title(),
+                    "capabilities": capabilities,
+                }
+                for code, capabilities in Capabilities.PRESETS.items()
+            ],
+        })
+
+
+class RolePresetView(APIView):
+    permission_classes = [IsAuthenticated, IsOrganizationAdmin]
+
+    def post(self, request):
+        position_id = request.data.get("position")
+        preset = request.data.get("preset")
+
+        if preset not in Capabilities.PRESETS:
+            raise ValidationError({"preset": "Invalid role preset."})
+
+        try:
+            position = Position.objects.get(
+                id=position_id,
+                company=request.user.company,
+            )
+        except Position.DoesNotExist:
+            raise ValidationError({"position": "Invalid position."})
+
+        grants = [
+            CapabilityGrantService.grant_position(
+                company=request.user.company,
+                position=position,
+                capability=capability,
+                actor=request.user,
+                reason=f"Applied {preset.replace('_', ' ').title()} preset.",
+                request=request,
+            )
+            for capability in Capabilities.PRESETS[preset]
+        ]
+        return Response({
+            "preset": preset,
+            "position": str(position.id),
+            "grants": PositionCapabilityGrantSerializer(
+                grants,
+                many=True,
+            ).data,
+        })
 
 
 # ============================================================

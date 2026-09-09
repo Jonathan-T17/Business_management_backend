@@ -1,6 +1,9 @@
 import uuid
 
 from django.conf import settings
+from django.contrib.contenttypes.fields import (
+    GenericRelation,
+)
 from django.db import models
 from django.utils import timezone
 
@@ -96,12 +99,54 @@ class Report(models.Model):
         default=False,
     )
 
+    attachments = GenericRelation(
+        "documents.Attachment",
+        related_query_name="reports",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
     )
 
     updated_at = models.DateTimeField(
         auto_now=True,
+    )
+
+    STATUS_CHOICES = (
+        ("DRAFT", "Draft"),
+        ("SUBMITTED", "Submitted"),
+        ("UNDER_REVIEW", "Under Review"),
+        ("RETURNED", "Returned"),
+        ("APPROVED", "Approved"),
+        ("REJECTED", "Rejected"),
+        ("ESCALATED", "Escalated"),
+        ("CLOSED", "Closed"),
+    )
+    
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="DRAFT",
+    )
+    
+    report_number = models.CharField(
+        max_length=100,
+        blank=True,
+        db_index=True,
+    )
+    
+    reporting_date = models.DateField(
+        default=timezone.localdate,
+    )
+    
+    submitted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+    
+    approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
     )
 
     class Meta:
@@ -156,6 +201,11 @@ class ReportComment(models.Model):
 
     created_at = models.DateTimeField(
         default=timezone.now,
+    )
+
+    attachments = GenericRelation(
+        "documents.Attachment",
+        related_query_name="report_comments",
     )
 
     class Meta:

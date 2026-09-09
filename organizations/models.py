@@ -4,6 +4,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from core.capabilities import Capabilities
 
 User = settings.AUTH_USER_MODEL
 
@@ -63,6 +64,13 @@ class Department(models.Model):
             models.UniqueConstraint(
                 fields=["company", "branch", "name"],
                 name="unique_department_per_company_branch",
+            ),
+        ]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "employee_id"],
+                name="unique_employee_id_per_company",
             ),
         ]
 
@@ -282,7 +290,6 @@ class EmployeeProfile(models.Model):
 
     employee_id = models.CharField(
         max_length=50,
-        unique=True,
     )
 
     company = models.ForeignKey(
@@ -346,6 +353,23 @@ class EmployeeProfile(models.Model):
 
     hire_date = models.DateField(
         default=timezone.now,
+    )
+
+    termination_date = models.DateField(
+        null=True,
+        blank=True,
+    )
+
+    termination_reason = models.TextField(
+        blank=True,
+    )
+
+    terminated_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="terminated_employees",
     )
 
     phone = models.CharField(
@@ -453,6 +477,366 @@ class EmployeeProfile(models.Model):
             full_name = self.user.get_username()
 
         return f"{self.employee_id} - {full_name}"
+
+
+# ============================================================
+# User Capability Grant
+# ============================================================
+
+class UserCapabilityGrant(models.Model):
+
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        related_name="user_capability_grants",
+    )
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="capability_grants",
+    )
+
+    capability = models.CharField(
+        max_length=100,
+        choices=Capabilities.choices(),
+    )
+
+    granted_by = models.ForeignKey(
+        User,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="capabilities_granted",
+    )
+
+    reason = models.TextField(blank=True)
+
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    revoked_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="capabilities_revoked",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "user", "capability"],
+                name="unique_company_user_capability",
+            )
+        ]
+
+        indexes = [
+            models.Index(
+                fields=["company", "user", "is_active"]
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.user.email}: {self.capability}"
+
+
+# ============================================================
+# Position Capability Grant
+# ============================================================
+
+class PositionCapabilityGrant(models.Model):
+
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        related_name="position_capability_grants",
+    )
+
+    position = models.ForeignKey(
+        Position,
+        on_delete=models.CASCADE,
+        related_name="capability_grants",
+    )
+
+    capability = models.CharField(
+        max_length=100,
+        choices=Capabilities.choices(),
+    )
+
+    granted_by = models.ForeignKey(
+        User,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="position_capabilities_granted",
+    )
+
+    reason = models.TextField(blank=True)
+
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "position", "capability"],
+                name="unique_company_position_capability",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.position.title}: {self.capability}"
+
+
+# ============================================================
+# Employee Compensation
+# ============================================================
+
+class EmployeeCompensation(models.Model):
+
+    CURRENCY_CHOICES = (
+        ("RWF", "Rwandan Franc"),
+        ("USD", "US Dollar"),
+        ("EUR", "Euro"),
+        ("GBP", "British Pound"),
+    )
+
+    employee = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.PROTECT,
+        related_name="compensation_records",
+    )
+
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        related_name="employee_compensations",
+    )
+
+    base_salary = models.DecimalField(max_digits=15, decimal_places=2)
+
+    currency = models.CharField(
+        max_length=10,
+        choices=CURRENCY_CHOICES,
+        default="RWF",
+    )
+
+    housing_allowance = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=0,
+    )
+
+    transport_allowance = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=0,
+    )
+
+    other_allowance = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=0,
+    )
+
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    is_current = models.BooleanField(default=True)
+
+    created_by = models.ForeignKey(
+        User,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="created_compensation_records",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-effective_from"]
+        indexes = [
+            models.Index(
+                fields=["company", "employee", "is_current"]
+            )
+        ]
+
+    @property
+    def gross_fixed_compensation(self):
+        return (
+            self.base_salary
+            + self.housing_allowance
+            + self.transport_allowance
+            + self.other_allowance
+        )
+
+    def __str__(self):
+        return (
+            f"{self.employee.employee_id} "
+            f"{self.currency} {self.base_salary}"
+        )
+
+
+# ============================================================
+# Employee Delegation
+# ============================================================
+
+class EmployeeDelegation(models.Model):
+
+    STATUS_CHOICES = (
+        ("SCHEDULED", "Scheduled"),
+        ("ACTIVE", "Active"),
+        ("EXPIRED", "Expired"),
+        ("CANCELLED", "Cancelled"),
+    )
+
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        related_name="employee_delegations",
+    )
+
+    from_user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="delegations_given",
+    )
+
+    to_user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="delegations_received",
+    )
+
+    permissions = models.JSONField(
+        default=list,
+        blank=True,
+    )
+
+    reason = models.TextField(
+        blank=True,
+    )
+
+    starts_at = models.DateTimeField()
+
+    ends_at = models.DateTimeField()
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="SCHEDULED",
+    )
+
+    created_by = models.ForeignKey(
+        User,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="created_delegations",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+        indexes = [
+            models.Index(
+                fields=[
+                    "company",
+                    "status",
+                    "starts_at",
+                    "ends_at",
+                ]
+            )
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.from_user.email} → "
+            f"{self.to_user.email}"
+        )
+
+
+class EmployeeReplacement(models.Model):
+
+    STATUS_CHOICES = (
+        ("PENDING", "Pending"),
+        ("COMPLETED", "Completed"),
+        ("CANCELLED", "Cancelled"),
+    )
+
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        related_name="employee_replacements",
+    )
+
+    outgoing_employee = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.PROTECT,
+        related_name="replacement_history",
+    )
+
+    incoming_employee = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.PROTECT,
+        related_name="replaced_employees",
+    )
+
+    transfer_open_tasks = models.BooleanField(
+        default=True,
+    )
+
+    transfer_project_memberships = models.BooleanField(
+        default=True,
+    )
+
+    transfer_team_leadership = models.BooleanField(
+        default=False,
+    )
+
+    transfer_department_management = models.BooleanField(
+        default=False,
+    )
+
+    transfer_branch_management = models.BooleanField(
+        default=False,
+    )
+
+    reason = models.TextField(
+        blank=True,
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="PENDING",
+    )
+
+    performed_by = models.ForeignKey(
+        User,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="employee_replacements_performed",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
 
 
 # ============================================================

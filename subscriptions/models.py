@@ -13,12 +13,36 @@ class Plan(models.Model):
     max_users = models.PositiveIntegerField()
     max_projects = models.PositiveIntegerField()
 
+    max_branches = models.PositiveIntegerField(
+        default=1,
+    )
+
+    storage_limit_bytes = models.PositiveBigIntegerField(
+        default=1073741824,
+    )
+
     ai_analytics_enabled = models.BooleanField(
         default=False
     )
 
     reports_enabled = models.BooleanField(
         default=True
+    )
+
+    field_operations_enabled = models.BooleanField(
+        default=False,
+    )
+
+    advanced_workflows_enabled = models.BooleanField(
+        default=False,
+    )
+
+    official_records_enabled = models.BooleanField(
+        default=False,
+    )
+
+    custom_forms_enabled = models.BooleanField(
+        default=True,
     )
 
     price_monthly = models.DecimalField(

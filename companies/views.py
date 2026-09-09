@@ -7,18 +7,23 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core.roles import Roles
-from security.services import create_audit_log
+from security.services import create_audit_log, terminate_company_sessions
 from notifications.services import create_notification
+from subscriptions.services import SubscriptionService
 
-from .models import (Company, Branch, CompanyInvite)
+from .models import Company, Branch, CompanyInvite
 
-from .serializers import (CompanySerializer, BranchSerializer, CompanyInviteSerializer)
+from .serializers import (
+    CompanySerializer,
+    BranchSerializer,
+    CompanyInviteSerializer,
+)
 
 from .permissions import (
     IsCompanyMember, IsCompanyAdmin,
     CanManageBranches, CanManageInvites)
 
-from .services import CompanyInviteService
+from .services import CompanyInviteService, BranchLifecycleService
 
 from django.utils import timezone
 from rest_framework.permissions import AllowAny
@@ -38,7 +43,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
             return Company.objects.none()
 
         if user.role == Roles.SUPERUSER:
-            return Company.objects.all()
+            return Company.objects.none()
 
         if not getattr(user, "company_id", None):
             return Company.objects.none()
@@ -164,6 +169,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
 
         company.is_active = False
         company.save(update_fields=["is_active"])
+        terminate_company_sessions(company)
 
         create_audit_log(
             user=request.user,
@@ -239,6 +245,11 @@ class BranchViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         user = self.request.user
 
+        if not SubscriptionService.can_add_branch(user.company):
+            raise ValidationError(
+                "Your subscription branch limit has been reached."
+            )
+
         branch = serializer.save(
             company=user.company,
             created_by=user,
@@ -274,19 +285,11 @@ class BranchViewSet(viewsets.ModelViewSet):
     )
     def activate(self, request, pk=None):
         branch = self.get_object()
-
-        branch.is_active = True
-        branch.save(update_fields=["is_active"])
-
-        create_audit_log(
-            user=request.user,
-            request=request,
-            action="UPDATE",
-            description=(
-                f"Branch activated: {branch.name}"
-            ),
-            obj=branch,
+        BranchLifecycleService.activate(
+            branch=branch, actor=request.user,
+            reason=request.data.get("reason", "").strip(), request=request,
         )
+
 
         return Response(
             {
@@ -303,19 +306,11 @@ class BranchViewSet(viewsets.ModelViewSet):
     )
     def deactivate(self, request, pk=None):
         branch = self.get_object()
-
-        branch.is_active = False
-        branch.save(update_fields=["is_active"])
-
-        create_audit_log(
-            user=request.user,
-            request=request,
-            action="UPDATE",
-            description=(
-                f"Branch deactivated: {branch.name}"
-            ),
-            obj=branch,
+        BranchLifecycleService.deactivate(
+            branch=branch, actor=request.user,
+            reason=request.data.get("reason", "").strip(), request=request,
         )
+
 
         return Response(
             {
@@ -336,10 +331,7 @@ class CompanyInviteViewSet(viewsets.ModelViewSet):
             return CompanyInvite.objects.none()
 
         if user.role == Roles.SUPERUSER:
-            return CompanyInvite.objects.select_related(
-                "company",
-                "created_by",
-            )
+            return CompanyInvite.objects.none()
 
         if not getattr(user, "company_id", None):
             return CompanyInvite.objects.none()

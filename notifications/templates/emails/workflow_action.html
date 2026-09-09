@@ -1,0 +1,29 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+
+<h2>Action required</h2>
+
+<p>
+    An item has reached a workflow
+    step that requires your attention.
+</p>
+
+<p>
+    <strong>Step:</strong>
+    {{ step.name }}
+</p>
+
+{% if target.title %}
+<p>
+    <strong>Item:</strong>
+    {{ target.title }}
+</p>
+{% endif %}
+
+<p>
+    Sign in to SmartBiz to review
+    and take the required action.
+</p>
+
+{% endblock %}

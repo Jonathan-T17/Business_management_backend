@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from core.roles import Roles
 from security.viewsets import SecureModelViewSet
@@ -10,7 +11,7 @@ from core.audit import ActivityAudit
 from .models import Plan, Subscription
 from .serializers import PlanSerializer, SubscriptionSerializer
 from .permissions import IsSubscriptionAdmin
-from .services import activate_subscription, cancel_subscription
+from .services import SubscriptionService, activate_subscription, cancel_subscription
 
 
 class PlanViewSet(SecureModelViewSet):
@@ -113,6 +114,36 @@ class SubscriptionViewSet(SecureModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class SubscriptionUsageView(APIView):
+    permission_classes = [IsAuthenticated, IsSubscriptionAdmin]
+
+    def get(self, request):
+        return Response(SubscriptionService.usage(request.user.company))
+
+
+class SubscriptionFeaturesView(APIView):
+    permission_classes = [IsAuthenticated, IsSubscriptionAdmin]
+
+    def get(self, request):
+        features = (
+            "ADVANCED_ANALYTICS",
+            "REPORTING",
+            "FIELD_OPERATIONS",
+            "ADVANCED_WORKFLOWS",
+            "OFFICIAL_RECORDS",
+            "CUSTOM_FORMS",
+        )
+        return Response({
+            "features": {
+                feature: SubscriptionService.has_feature(
+                    request.user.company,
+                    feature,
+                )
+                for feature in features
+            }
+        })
 
     @action(detail=True, methods=["post"], url_path="reactivate")
     def reactivate(self, request, pk=None):

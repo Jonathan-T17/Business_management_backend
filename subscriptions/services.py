@@ -5,6 +5,11 @@ from security.services import create_audit_log
 from .models import Subscription
 
 
+from rest_framework.exceptions import PermissionDenied,ValidationError
+from core.capability_service import CapabilityService
+from core.capabilities import Capabilities
+
+
 @transaction.atomic
 def activate_subscription(
     *,
@@ -134,8 +139,12 @@ class SubscriptionService:
             is_deleted=False
         ).count()
 
+        pending_invitations = company.invites.filter(
+            status="PENDING",
+        ).count()
+
         return (
-            current_users
+            current_users + pending_invitations
             < subscription.plan.max_users
         )
 
@@ -155,6 +164,64 @@ class SubscriptionService:
             current_projects
             < subscription.plan.max_projects
         )
+
+    @classmethod
+    def can_add_branch(cls, company):
+        subscription = cls.require_active(company)
+        return company.branches.filter(is_active=True).count() < subscription.plan.max_branches
+
+    @classmethod
+    def storage_used_bytes(cls, company):
+        from django.db.models import Sum
+        from documents.models import Attachment
+
+        return Attachment.objects.filter(
+            company=company,
+            is_active=True,
+        ).aggregate(total=Sum("file_size"))["total"] or 0
+
+    @classmethod
+    def can_upload(cls, company, additional_bytes=0):
+        subscription = cls.require_active(company)
+        return (
+            cls.storage_used_bytes(company) + additional_bytes
+            <= subscription.plan.storage_limit_bytes
+        )
+
+    @classmethod
+    def has_feature(cls, company, feature):
+        subscription = cls.require_active(company)
+        feature_map = {
+            "ADVANCED_ANALYTICS": subscription.plan.ai_analytics_enabled,
+            "REPORTING": subscription.plan.reports_enabled,
+            "FIELD_OPERATIONS": subscription.plan.field_operations_enabled,
+            "ADVANCED_WORKFLOWS": subscription.plan.advanced_workflows_enabled,
+            "OFFICIAL_RECORDS": subscription.plan.official_records_enabled,
+            "CUSTOM_FORMS": subscription.plan.custom_forms_enabled,
+        }
+        return feature_map.get(feature, False)
+
+    @classmethod
+    def usage(cls, company):
+        subscription = cls.require_active(company)
+        return {
+            "users": {
+                "used": company.users.filter(is_deleted=False).count(),
+                "limit": subscription.plan.max_users,
+            },
+            "projects": {
+                "used": company.projects.filter(is_active=True).count(),
+                "limit": subscription.plan.max_projects,
+            },
+            "branches": {
+                "used": company.branches.filter(is_active=True).count(),
+                "limit": subscription.plan.max_branches,
+            },
+            "storage": {
+                "used_bytes": cls.storage_used_bytes(company),
+                "limit_bytes": subscription.plan.storage_limit_bytes,
+            },
+        }
 
 
     @classmethod
@@ -179,3 +246,25 @@ class SubscriptionService:
         return (
             subscription.plan.ai_analytics_enabled
         )
+
+
+
+
+class SubscriptionLifecycleService:
+    @classmethod
+    @transaction.atomic
+    def change_plan(cls,*,subscription,new_plan,actor,reason,request=None):
+        if not CapabilityService.has(actor,Capabilities.PLATFORM_SUBSCRIPTIONS):raise PermissionDenied("Platform subscription authority is required.")
+        reason=(reason or "").strip()
+        if not reason:raise ValidationError("A reason is required.")
+        locked=type(subscription).objects.select_for_update().get(pk=subscription.pk);old=locked.plan;locked.plan=new_plan;locked.save(update_fields=["plan","updated_at"])
+        create_audit_log(user=actor,company=locked.company,request=request,action="UPDATE",description=f"Subscription plan changed from {old.name} to {new_plan.name}.",obj=locked,metadata={"reason":reason})
+        return locked
+    @classmethod
+    @transaction.atomic
+    def reactivate(cls,*,subscription,actor,reason,request=None):
+        if not CapabilityService.has(actor,Capabilities.PLATFORM_SUBSCRIPTIONS):raise PermissionDenied("Platform subscription authority is required.")
+        reason=(reason or "").strip()
+        if not reason:raise ValidationError("A reason is required.")
+        locked=type(subscription).objects.select_for_update().get(pk=subscription.pk);locked.is_active=True;locked.save(update_fields=["is_active","updated_at"])
+        create_audit_log(user=actor,company=locked.company,request=request,action="UPDATE",description="Subscription reactivated.",obj=locked,metadata={"reason":reason});return locked

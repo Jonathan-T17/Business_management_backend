@@ -13,6 +13,9 @@ from .views import (
     RequestPasswordResetView,
     LogoutView,
     VerifyOTPView,
+    DeactivateUserView,
+    ActivateUserView,
+    ChangeUserRoleView,
 )
 
 router = DefaultRouter()
@@ -29,6 +32,9 @@ urlpatterns = [
     path("confirm-password-reset/", ConfirmPasswordResetView.as_view()),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("verify-otp/", VerifyOTPView.as_view(), name="verify-otp"),
+    path("users/<uuid:user_id>/deactivate/", DeactivateUserView.as_view(), name="deactivate-user"),
+    path("users/<uuid:user_id>/activate/", ActivateUserView.as_view(), name="activate-user"),
+    path("users/<uuid:user_id>/role/", ChangeUserRoleView.as_view(), name="change-user-role"),
 ]
 
 # Include router URLs as well

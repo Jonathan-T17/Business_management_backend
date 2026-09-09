@@ -1,27 +1,16 @@
 from rest_framework.permissions import BasePermission
+from core.capabilities import Capabilities
+from core.capability_service import CapabilityService
 
-from core.roles import Roles
-
-
-class IsPlatformSuperUser(BasePermission):
-    """
-    Platform-level administration only.
-    """
-
-    message = (
-        "Platform administrator access is required."
-    )
-
+class RequiresPlatformCapability(BasePermission):
+    capability = None
     def has_permission(self, request, view):
-        user = request.user
+        cap = getattr(view, "required_platform_capability", self.capability)
+        return bool(cap and request.user.is_authenticated and CapabilityService.has(request.user, cap))
 
-        if (
-            not user
-            or not user.is_authenticated
-        ):
-            return False
-
-        return (
-            bool(user.is_superuser)
-            or user.role == Roles.SUPERUSER
-        )
+class CanManagePlatformCompanies(RequiresPlatformCapability): capability = Capabilities.MANAGE_PLATFORM_COMPANIES
+class CanManagePlatformUsers(RequiresPlatformCapability): capability = Capabilities.MANAGE_PLATFORM_USERS
+class CanManagePlatformSubscriptions(RequiresPlatformCapability): capability = Capabilities.MANAGE_PLATFORM_SUBSCRIPTIONS
+class CanViewPlatformSecurity(RequiresPlatformCapability): capability = Capabilities.VIEW_PLATFORM_SECURITY
+class CanViewPlatformHealth(RequiresPlatformCapability): capability = Capabilities.VIEW_PLATFORM_HEALTH
+class CanUsePlatformSupport(RequiresPlatformCapability): capability = Capabilities.PLATFORM_SUPPORT

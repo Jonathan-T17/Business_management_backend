@@ -1,0 +1,11 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<h2>Report overdue</h2>
+
+<p>Hello{% if obligation.user %} {{ obligation.user.full_name }}{% endif %},</p>
+
+<p><strong>{{ obligation.schedule.name }}</strong> is overdue.</p>
+
+<p><a href="/my-reports">Open my reports</a></p>
+{% endblock %}

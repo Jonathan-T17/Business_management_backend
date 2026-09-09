@@ -1,4 +1,7 @@
 from django.db import transaction
+from django.contrib.auth import get_user_model
+from core.authorization import Authorization
+from core.roles import Roles
 
 from .models import (
     Notification,
@@ -8,6 +11,18 @@ from .models import (
 from .email_service import (
     CompanyEmailService,
 )
+
+
+SUPERUSER_ONLY_NOTIFICATION_TYPES = frozenset({
+    "SECURITY",
+    "NEW_LOGIN",
+    "OTP_SUCCESS",
+    "OTP_FAILED",
+    "OTP_EXPIRED",
+    "ACCOUNT_LOCKED",
+    "ACCOUNT_INTERVENTION",
+    "SECURITY_DIGEST",
+})
 
 
 def create_notification(
@@ -30,24 +45,42 @@ def create_notification(
         )
     )
 
+    if notification_type in SUPERUSER_ONLY_NOTIFICATION_TYPES:
+        notifications = []
+        user_model = get_user_model()
+        superusers = (
+            [recipient]
+            if Authorization.is_platform_superuser(recipient)
+            else user_model.objects.filter(
+                is_superuser=True,
+            ).union(
+                user_model.objects.filter(role=Roles.SUPERUSER)
+            )
+        )
+        for superuser in superusers:
+            notifications.append(
+                Notification.objects.create(
+                    recipient=superuser,
+                    company=company or getattr(superuser, "company", None),
+                    branch=None,
+                    notification_type=notification_type,
+                    title=title,
+                    message=message,
+                    url=url,
+                    reference_id=reference_id,
+                )
+            )
+        return notifications[0] if notifications else None
+
     return Notification.objects.create(
         recipient=recipient,
         company=company,
-        branch=(
-            branch
-            or getattr(
-                recipient,
-                "branch",
-                None,
-            )
-        ),
-        notification_type=
-            notification_type,
+        branch=branch or getattr(recipient, "branch", None),
+        notification_type=notification_type,
         title=title,
         message=message,
         url=url,
-        reference_id=
-            reference_id,
+        reference_id=reference_id,
     )
 
 
@@ -168,9 +201,30 @@ class CommunicationService:
             )
         )
 
+        policy = None
+        if company:
+            from company_setup.models import NotificationPolicy
+
+            policy = NotificationPolicy.objects.filter(
+                company=company,
+                event_code=notification_type,
+                is_active=True,
+            ).first()
+
+        in_app_enabled = preferences.in_app_enabled
+        email_enabled = True
+        user_can_disable_email = True
+        if policy:
+            in_app_enabled = (
+                in_app_enabled
+                and policy.in_app_enabled
+            )
+            email_enabled = policy.email_enabled
+            user_can_disable_email = policy.user_can_disable_email
+
         notification = None
 
-        if preferences.in_app_enabled:
+        if in_app_enabled:
             notification = (
                 create_notification(
                     recipient=recipient,
@@ -186,51 +240,54 @@ class CommunicationService:
                 )
             )
 
+        email_recipients = [recipient]
+        if notification_type in SUPERUSER_ONLY_NOTIFICATION_TYPES:
+            user_model = get_user_model()
+            email_recipients = list(
+                user_model.objects.filter(is_superuser=True).union(
+                    user_model.objects.filter(role=Roles.SUPERUSER)
+                )
+            )
+
         should_email = (
             send_email
+            and email_enabled
             and bool(
                 email_template
             )
-            and (
-                force_email
-                or cls.email_allowed(
-                    recipient,
-                    notification_type,
-                )
-            )
+            and email_recipients
         )
 
         if should_email:
-
-            transaction.on_commit(
-                lambda: (
-                    CompanyEmailService.send(
-                        company=company,
-                        user=recipient,
-                        recipient_email=
-                            recipient.email,
-                        subject=(
-                            email_subject
-                            or title
-                        ),
-                        template=
-                            email_template,
-                        email_type=
-                            notification_type,
-                        context=
-                            email_context,
-                        reference_id=(
-                            str(
-                                reference_id
-                            )
-                            if reference_id
-                            else ""
-                        ),
-                        force=
-                            force_email,
+            for email_recipient in email_recipients:
+                if (
+                    not force_email
+                    and user_can_disable_email
+                    and not cls.email_allowed(
+                        email_recipient,
+                        notification_type,
+                    )
+                ):
+                    continue
+                transaction.on_commit(
+                    lambda email_recipient=email_recipient: (
+                        CompanyEmailService.send(
+                            company=company,
+                            user=email_recipient,
+                            recipient_email=email_recipient.email,
+                            subject=email_subject or title,
+                            template=email_template,
+                            email_type=notification_type,
+                            context=email_context,
+                            reference_id=(
+                                str(reference_id)
+                                if reference_id
+                                else ""
+                            ),
+                            force=force_email,
+                        )
                     )
                 )
-            )
 
         return notification
 

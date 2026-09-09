@@ -1,4 +1,7 @@
 from django.conf import settings
+from django.contrib.contenttypes.fields import (
+    GenericRelation,
+)
 from django.db import models
 
 from companies.models import Company
@@ -38,6 +41,11 @@ class Comment(models.Model):
     )
 
     content = models.TextField()
+
+    attachments = GenericRelation(
+        "documents.Attachment",
+        related_query_name="comments",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

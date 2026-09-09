@@ -7,7 +7,11 @@ from security.models import TrustedDevice
 from users.services import UserService
 from .models import User
 from core.roles import Roles
+from core.action_policy import actions_for, capabilities_for
 class UserSerializer(serializers.ModelSerializer):
+    capabilities = serializers.SerializerMethodField()
+    allowed_actions = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = (
@@ -18,9 +22,21 @@ class UserSerializer(serializers.ModelSerializer):
             "company",
             "branch",
             "is_active",
+            "account_state",
+            "email_verified",
+            "must_change_password",
             "date_joined",
+            "capabilities",
+            "allowed_actions",
         )
-        read_only_fields = ("role", "company", "branch")
+        read_only_fields = ("role", "company", "branch", "account_state", "email_verified", "must_change_password")
+
+    def get_capabilities(self, obj):
+        return capabilities_for(obj)
+
+    def get_allowed_actions(self, obj):
+        request = self.context.get("request")
+        return actions_for(request.user if request else obj, target=obj)
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
@@ -91,6 +107,7 @@ class UserRegisterSerializer(serializers.ModelSerializer):
 
 from rest_framework_simplejwt.serializers import (
     TokenObtainPairSerializer,
+    TokenRefreshSerializer,
 )
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -103,6 +120,7 @@ from security.services import (
     record_login,
     register_failed_attempt,
 )
+from core.authorization import Authorization
 
 from security.utils import (
     get_client_ip,
@@ -116,6 +134,14 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         request = self.context["request"]
         email = attrs["email"]
         ip = get_client_ip(request)
+
+        candidate = User.objects.select_related("company").filter(
+            email=email
+        ).first()
+        if candidate and not Authorization.can_authenticate(candidate):
+            raise serializers.ValidationError(
+                "This account or company is inactive."
+            )
 
         # Lockout check
         if is_account_locked(email, ip):
@@ -132,6 +158,12 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 description=f"Failed login for {email}",
             )
             raise
+
+        if not Authorization.can_authenticate(self.user):
+            register_failed_attempt(email, ip, reason="Inactive account or company")
+            raise serializers.ValidationError(
+                "This account or company is inactive."
+            )
 
         clear_failed_attempts(email, ip)
 
@@ -178,4 +210,18 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "full_name": self.user.full_name,
             "role": self.user.role,
         }
+        return data
+
+
+class ActiveCompanyTokenRefreshSerializer(TokenRefreshSerializer):
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user = User.objects.get(pk=self.token["user_id"])
+
+        if not Authorization.can_authenticate(user):
+            raise serializers.ValidationError(
+                "Account or company access is inactive."
+            )
+
         return data

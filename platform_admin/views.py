@@ -1,4 +1,5 @@
 from django.utils import timezone
+from django.conf import settings
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -9,6 +10,7 @@ from rest_framework.exceptions import ValidationError
 from companies.models import Company
 from notifications.models import EmailDeliveryLog
 from users.models import User
+from core.roles import Roles
 
 from activity.models import ActivityLog
 
@@ -26,6 +28,8 @@ from security.models import (
 
 from security.services import (
     create_audit_log,
+    terminate_company_sessions,
+    terminate_user_sessions,
 )
 
 from .permissions import (
@@ -112,6 +116,22 @@ class PlatformDashboardView(APIView):
         )
 
         return Response(data)
+
+
+class PlatformSettingsView(APIView):
+    permission_classes = [IsPlatformSuperUser]
+
+    def get(self, request):
+        return Response({
+            "editable": False,
+            "settings": {
+                "access_token_minutes": int(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds() / 60),
+                "refresh_token_days": int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds() / 86400),
+                "frontend_url": getattr(settings, "FRONTEND_URL", ""),
+                "email_configured": bool(getattr(settings, "DEFAULT_FROM_EMAIL", "")),
+            },
+            "message": "Platform settings are deployment-managed and cannot be edited through the API.",
+        })
 
 
 # ============================================================
@@ -206,6 +226,7 @@ class PlatformCompanyViewSet(
                 "is_active"
             ]
         )
+        terminate_company_sessions(company)
 
         create_audit_log(
             user=request.user,
@@ -276,6 +297,14 @@ class PlatformCompanyViewSet(
             "message":
                 "Company activated."
         })
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="reactivate",
+    )
+    def reactivate(self, request, pk=None):
+        return self.activate(request, pk=pk)
 
 
 # ============================================================
@@ -407,6 +436,71 @@ class PlatformUserViewSet(
             "terminated_sessions":
                 count,
         })
+
+    def _require_reason(self, request):
+        reason = request.data.get("reason", "").strip()
+        if not reason:
+            raise ValidationError({"reason": "A reason is required."})
+        return reason
+
+    def _get_action_target(self, pk):
+        target_user = self.get_object()
+        if target_user.role == Roles.SUPERUSER:
+            raise ValidationError("Platform superuser accounts cannot be changed through this endpoint.")
+        return target_user
+
+    @action(detail=True, methods=["post"], url_path="deactivate")
+    def deactivate(self, request, pk=None):
+        target_user = self._get_action_target(pk)
+        reason = self._require_reason(request)
+        target_user.is_active = False
+        target_user.save(update_fields=("is_active",))
+        terminate_user_sessions(target_user, reason=reason)
+        create_audit_log(
+            user=request.user,
+            company=target_user.company,
+            branch=target_user.branch,
+            request=request,
+            action="SECURITY",
+            description=f"Platform administrator deactivated {target_user.email}. Reason: {reason}",
+            obj=target_user,
+        )
+        return Response({"message": "User deactivated.", "is_active": False})
+
+    @action(detail=True, methods=["post"], url_path="reactivate")
+    def reactivate(self, request, pk=None):
+        target_user = self._get_action_target(pk)
+        reason = self._require_reason(request)
+        target_user.is_active = True
+        target_user.save(update_fields=("is_active",))
+        create_audit_log(
+            user=request.user,
+            company=target_user.company,
+            branch=target_user.branch,
+            request=request,
+            action="SECURITY",
+            description=f"Platform administrator reactivated {target_user.email}. Reason: {reason}",
+            obj=target_user,
+        )
+        return Response({"message": "User reactivated.", "is_active": True})
+
+    @action(detail=True, methods=["post"], url_path="require-password-reset")
+    def require_password_reset(self, request, pk=None):
+        target_user = self._get_action_target(pk)
+        reason = self._require_reason(request)
+        target_user.must_change_password = True
+        target_user.password_reset_required_at = timezone.now()
+        target_user.save(update_fields=("must_change_password", "password_reset_required_at"))
+        create_audit_log(
+            user=request.user,
+            company=target_user.company,
+            branch=target_user.branch,
+            request=request,
+            action="SECURITY",
+            description=f"Platform administrator required password reset for {target_user.email}. Reason: {reason}",
+            obj=target_user,
+        )
+        return Response({"message": "Password reset requirement applied."})
 
 
 # ============================================================

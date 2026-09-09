@@ -7,6 +7,10 @@ from rest_framework.views import APIView
 from core.roles import Roles
 from core.tenant import TenantService
 from notifications.models import Notification
+from activity.models import ActivityLog
+from companies.models import Branch
+from organizations.models import Department, Team
+from users.models import User
 
 
 class DashboardView(APIView):
@@ -20,6 +24,21 @@ class DashboardView(APIView):
 		tasks = TenantService.tasks(user)
 		reports = TenantService.reports(user)
 		notifications = TenantService.notifications(user)
+		activity = TenantService.activity(user)
+		company_filter = {}
+		if role != Roles.SUPERUSER:
+			company_filter = {"company_id": user.company_id}
+
+		organization_counts = {
+			"employees": User.objects.filter(
+				**company_filter,
+				is_deleted=False,
+			).exclude(role=Roles.SUPERUSER).count(),
+			"branches": Branch.objects.filter(**company_filter).count(),
+			"departments": Department.objects.filter(**company_filter).count(),
+			"teams": Team.objects.filter(**company_filter).count(),
+			"activity": activity.count(),
+		}
 
 		dashboard = {
 			Roles.SUPERUSER: "platform",
@@ -80,6 +99,7 @@ class DashboardView(APIView):
 				else None
 			),
 			"summary": {
+				**organization_counts,
 				"projects": projects.count(),
 				"tasks": tasks.count(),
 				"reports": reports.count(),
@@ -90,6 +110,22 @@ class DashboardView(APIView):
 			},
 			"recent_projects": recent_projects,
 			"recent_tasks": recent_tasks,
+			"recent_activity": [
+				{
+					"id": item.id,
+					"action": item.action,
+					"user_id": item.user_id,
+					"project_id": item.project_id,
+					"task_id": item.task_id,
+					"metadata": item.metadata,
+					"created_at": item.created_at,
+				}
+				for item in activity.select_related(
+					"user",
+					"project",
+					"task",
+				)[:20]
+			],
 			"endpoints": {
 				"profile": "/api/users/me/",
 				"notifications": "/api/notifications/",

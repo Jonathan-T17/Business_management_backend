@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+from django.db.models.functions import Lower
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -13,6 +14,16 @@ class Company(models.Model):
     name = models.CharField(
         max_length=255,
         unique=True,
+    )
+
+    official_name = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    registration_number = models.CharField(
+        max_length=100,
+        blank=True,
     )
 
     slug = models.SlugField(
@@ -39,6 +50,35 @@ class Company(models.Model):
     )
 
     address = models.TextField(
+        blank=True,
+    )
+
+    country = models.CharField(
+        max_length=2,
+        blank=True,
+    )
+
+    timezone = models.CharField(
+        max_length=100,
+        default="UTC",
+    )
+
+    default_currency = models.CharField(
+        max_length=3,
+        default="RWF",
+    )
+
+    date_format = models.CharField(
+        max_length=20,
+        default="DD/MM/YYYY",
+    )
+
+    week_starts_on = models.PositiveSmallIntegerField(
+        default=0,
+    )
+
+    setup_completed_at = models.DateTimeField(
+        null=True,
         blank=True,
     )
 
@@ -114,6 +154,7 @@ class Company(models.Model):
             or self.email
             or ""
         )
+
 
 class Branch(models.Model):
     company = models.ForeignKey(
@@ -236,6 +277,15 @@ class CompanyInvite(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+        constraints = [
+            models.UniqueConstraint(
+                Lower("email"),
+                "company",
+                condition=Q(status="PENDING"),
+                name="unique_pending_invite_email_per_company_ci",
+            ),
+        ]
 
         indexes = [
             models.Index(

@@ -1,149 +1,90 @@
 from rest_framework.permissions import BasePermission
+
 from core.authorization import Authorization
+from core.capabilities import Capabilities
+from core.capability_service import CapabilityService
 from core.roles import Roles
 
 
-class IsSuperUserOrCompanyAdmin(BasePermission):
+class RequiresCapability(BasePermission):
+    """Reusable DRF permission for one required capability.
+
+    Subclasses set ``required_capability``. Platform identities only pass for
+    platform-only capabilities because CapabilityService enforces the boundary.
+    """
+
+    required_capability = None
 
     def has_permission(self, request, view):
-        return Authorization.can_manage_company(request.user)
+        return bool(
+            self.required_capability
+            and Authorization.can_authenticate(request.user)
+            and CapabilityService.has(request.user, self.required_capability)
+        )
 
+
+class IsSuperUserOrCompanyAdmin(BasePermission):
+    """Backward-compatible name; intentionally tenant-admin only now.
+
+    Platform control-plane users must use /api/platform/... endpoints.
+    """
+
+    def has_permission(self, request, view):
+        return Authorization.can_authenticate(request.user) and Authorization.can_manage_company(
+            request.user
+        )
 
 
 class IsCompanyManager(BasePermission):
+    """Legacy tenant manager-or-admin check; never grants platform access."""
 
     def has_permission(self, request, view):
-        return (
-            request.user.is_authenticated
-            and request.user.role in (
-                Roles.SUPERUSER,
-                Roles.ADMIN,
-                Roles.MANAGER,
-            )
-        )
-
-# class IsCompanyManager(BasePermission):
-
-#     def has_permission(self, request, view):
-#         user = request.user
-
-#         return (
-#             user.is_authenticated
-#             and user.role.value
-#             if hasattr(user.role, "value")
-#             else user.role
-#         ) in ["SUPERUSER", "ADMIN", "MANAGER"]
+        user = request.user
+        return Authorization.is_tenant_user(user) and user.role in (Roles.ADMIN, Roles.MANAGER)
 
 
 class CanCreateTask(BasePermission):
-
     def has_permission(self, request, view):
         return Authorization.can_create_task(request.user)
 
 
 class CanUpdateTask(BasePermission):
-
     def has_permission(self, request, view):
         return Authorization.can_update_task(request.user)
 
 
 class CanCreateReport(BasePermission):
-
     def has_permission(self, request, view):
         return Authorization.can_create_report(request.user)
 
 
-class CanManageUsers(BasePermission):
-
-    def has_permission(self, request, view):
-        return Authorization.can_manage_users(request.user)
+class CanManageUsers(RequiresCapability):
+    required_capability = Capabilities.MANAGE_EMPLOYEES
 
 
-class CanManageSubscription(BasePermission):
-
-    def has_permission(self, request, view):
-        return Authorization.can_manage_subscription(request.user)
+class CanManageSubscription(RequiresCapability):
+    required_capability = Capabilities.MANAGE_SUBSCRIPTION
 
 
-class CanViewAnalytics(BasePermission):
-
-    def has_permission(self, request, view):
-        return Authorization.can_view_analytics(request.user)
+class CanViewAnalytics(RequiresCapability):
+    required_capability = Capabilities.VIEW_COMPANY_ANALYTICS
 
 
-
-# from rest_framework.permissions import BasePermission
-# from core.roles import Roles
-# from core.tenant import TenantService
+class CanManageWorkflows(RequiresCapability):
+    required_capability = Capabilities.MANAGE_WORKFLOWS
 
 
-# class RolePermission(BasePermission):
-#     """
-#     Base permission that checks if the user is authenticated
-#     and has one of the allowed roles.
-#     Also delegates object-level checks to TenantService.
-#     """
-#     allowed_roles = []
-
-#     def has_permission(self, request, view):
-#         return (
-#             request.user.is_authenticated
-#             and request.user.role in self.allowed_roles
-#         )
-
-#     def has_object_permission(self, request, view, obj):
-#         user = request.user
-
-#         # SUPERUSER always allowed
-#         if user.role == Roles.SUPERUSER:
-#             return True
-
-#         # Company-level restriction
-#         if user.role == Roles.ADMIN:
-#             return getattr(obj, "company", None) == user.company
-
-#         # Branch-level restriction
-#         if user.role in [Roles.MANAGER, Roles.EMPLOYEE]:
-#             return (
-#                 getattr(obj, "company", None) == user.company
-#                 and getattr(obj, "branch", None) == user.branch
-#             )
-
-#         # Self-only restriction
-#         return obj == user
+class CanManageReportingSchedules(RequiresCapability):
+    required_capability = Capabilities.MANAGE_REPORTING_SCHEDULES
 
 
-# # ✅ Atomic role checks
-# class IsSuperUser(RolePermission):
-#     allowed_roles = [Roles.SUPERUSER]
+class CanManageRequestTypes(RequiresCapability):
+    required_capability = Capabilities.MANAGE_REQUEST_TYPES
 
 
-# class IsCompanyAdmin(RolePermission):
-#     allowed_roles = [Roles.ADMIN]
+class CanViewCompanySecurity(RequiresCapability):
+    required_capability = Capabilities.VIEW_COMPANY_SECURITY
 
 
-# class IsManager(RolePermission):
-#     allowed_roles = [Roles.MANAGER]
-
-
-# class IsEmployee(RolePermission):
-#     allowed_roles = [Roles.EMPLOYEE]
-
-
-# # ✅ Combined role checks
-# class IsSuperUserOrCompanyAdmin(RolePermission):
-#     allowed_roles = [Roles.SUPERUSER, Roles.ADMIN]
-
-
-# class IsManagerOrEmployee(RolePermission):
-#     allowed_roles = [Roles.MANAGER, Roles.EMPLOYEE]
-
-
-# class IsAuthenticatedUser(RolePermission):
-#     allowed_roles = [
-#         Roles.SUPERUSER,
-#         Roles.ADMIN,
-#         Roles.MANAGER,
-#         Roles.EMPLOYEE,
-#         Roles.INDIVIDUAL,
-#     ]
+class IsPlatformAdmin(RequiresCapability):
+    required_capability = Capabilities.PLATFORM_ADMIN

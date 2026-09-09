@@ -16,6 +16,8 @@ class CompanySerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "name",
+            "official_name",
+            "registration_number",
             "slug",
             "description",
             "logo",
@@ -24,6 +26,12 @@ class CompanySerializer(serializers.ModelSerializer):
             "phone",
             "email",
             "address",
+            "country",
+            "timezone",
+            "default_currency",
+            "date_format",
+            "week_starts_on",
+            "setup_completed_at",
 
             "email_from_name",
             "email_reply_to",
@@ -41,6 +49,7 @@ class CompanySerializer(serializers.ModelSerializer):
             "slug",
             "created_at",
             "updated_at",
+            "setup_completed_at",
         )
 
     def validate_name(self, value):
@@ -211,19 +220,14 @@ class CompanyInviteSerializer(serializers.ModelSerializer):
 
         user = request.user
 
-        # Company admins cannot create another company admin
-        # through the normal invitation workflow.
-        if (
-            user.role == Roles.ADMIN
-            and value in (
-                Roles.SUPERUSER,
-                Roles.ADMIN,
-            )
-        ):
+        if value == Roles.SUPERUSER:
             raise serializers.ValidationError(
-                "Company administrators may only invite managers or employees."
+                "Platform roles cannot be assigned through company invitations."
             )
-
+        if value == Roles.ADMIN and user.role != Roles.ADMIN:
+            raise serializers.ValidationError(
+                "Only a Company Administrator may invite another Company Administrator."
+            )
         return value
 
     def validate(self, attrs):
