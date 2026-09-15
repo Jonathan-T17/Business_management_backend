@@ -13,6 +13,9 @@ class FormSubmissionLifecycleService:
 
     @classmethod
     def _assert_template_eligibility(cls, *, template, actor):
+        from .access import FormAccess
+        if not FormAccess.eligible(actor,template):
+            raise ValidationError('This published form is not available to you.')
         if template.company_id != actor.company_id or template.lifecycle_status != "PUBLISHED" or not template.is_active:
             raise ValidationError("This form is not available.")
         profile = getattr(actor, "employee_profile", None)
@@ -91,7 +94,7 @@ class FormSubmissionLifecycleService:
         from forms_engine.models import FormSubmission
         from workflows.runtime_service import WorkflowRuntimeService
 
-        submission = FormSubmission.objects.select_for_update().select_related("template__workflow").get(pk=submission.pk)
+        submission = FormSubmission.objects.select_for_update(of=("self",)).select_related("template__workflow").get(pk=submission.pk)
         if submission.submitted_by_id != actor.id or submission.status not in cls.EDITABLE:
             raise ValidationError("This submission cannot be submitted.")
         for field in submission.schema_snapshot:
@@ -130,5 +133,15 @@ class FormSubmissionWorkflowAdapter:
         target.status = "APPROVED"
         target.approved_at = timezone.now()
         target.save(update_fields=["status", "approved_at", "updated_at"])
-        from records_management.finalizers import OfficialRecordFinalizer
-        OfficialRecordFinalizer.maybe_issue(source=target, actor=actor, workflow_instance=workflow_instance, request=request)
+        from records_management.finalizer import OfficialRecordFinalizer
+        OfficialRecordFinalizer.finalize(source=target, actor=actor, request=request)
+
+    @staticmethod
+    def on_rejected(*, target, actor, workflow_instance, request=None):
+        target.status = "REJECTED"
+        target.save(update_fields=["status", "updated_at"])
+
+    @staticmethod
+    def on_returned(*, target, actor, workflow_instance, request=None):
+        target.status = "RETURNED"
+        target.save(update_fields=["status", "updated_at"])

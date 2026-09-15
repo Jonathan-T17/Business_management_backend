@@ -60,6 +60,9 @@ class CompanyOwnedConfigurationSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {field: "This item belongs to another company."}
                 )
+        template=attrs.get('form_template')
+        if template and (template.lifecycle_status!='PUBLISHED' or not template.is_active):
+            raise serializers.ValidationError({'form_template':'Choose an active published form version.'})
         return attrs
 
 

@@ -14,7 +14,7 @@ class AttachmentAccessService:
         if attachment.company_id != user.company_id:
             return False
         parent = attachment.content_object
-        return bool(parent and VisibilityService.can_view_generic_object(user=user, obj=parent))
+        return bool(parent and VisibilityService.can_view_attachment(user=user, attachment=attachment))
 
     @classmethod
     def can_attach(cls, *, user, parent):
@@ -22,6 +22,9 @@ class AttachmentAccessService:
             return False
         if getattr(parent, "company_id", None) != user.company_id:
             return False
+        if parent._meta.label_lower == 'forms_engine.formsubmission':
+            from forms_engine.attachments import can_upload_files
+            return can_upload_files(user, parent)
         return VisibilityService.can_view_generic_object(user=user, obj=parent)
 
 

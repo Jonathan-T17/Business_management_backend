@@ -8,7 +8,7 @@ from .permissions import IsCompanySetupAdmin
 from .readiness import SetupReadinessService
 from .services import SetupStateService
 from .allowed_actions import SetupAllowedActions
-from .setup_contract import SETUP_STEPS
+from .setup_contract import SETUP_STEPS, REQUIRED_STEPS
 
 class SetupStatusView(APIView):
     permission_classes = [IsAuthenticated, IsCompanySetupAdmin]
@@ -21,6 +21,7 @@ class SetupStatusView(APIView):
             {
                 "code": code,
                 "name": name,
+                "required": code in REQUIRED_STEPS,
                 "status": (
                     "COMPLETED" if code in completed else
                     "SKIPPED" if code in skipped else
@@ -31,6 +32,8 @@ class SetupStatusView(APIView):
             for code, name in SETUP_STEPS
         ]
         return Response({
+            "completed": state.onboarding_completed,
+            "progress": round(len(completed | skipped) / len(SETUP_STEPS) * 100),
             "onboarding_completed": state.onboarding_completed,
             "current_step": state.current_step,
             "selected_template": state.selected_template,
@@ -43,7 +46,12 @@ class SetupHealthView(APIView):
     permission_classes = [IsAuthenticated, IsCompanySetupAdmin]
 
     def get(self, request):
-        return Response(SetupReadinessService.evaluate(request.user.company))
+        health = SetupReadinessService.evaluate(request.user.company)
+        health["completed_steps"] = (
+            CompanySetupState.objects.filter(company=request.user.company)
+            .values_list("completed_steps", flat=True).first() or []
+        )
+        return Response(health)
 
 class SetupStepCompleteView(APIView):
     permission_classes = [IsAuthenticated, IsCompanySetupAdmin]
@@ -431,3 +439,36 @@ class SetupFinishView(APIView):
 # class NotificationPolicyViewSet(CompanyConfigurationViewSet):
 #     queryset = NotificationPolicy.objects.all()
 #     serializer_class = NotificationPolicySerializer
+class SetupTemplatesView(APIView):
+    permission_classes = [IsAuthenticated, IsCompanySetupAdmin]
+
+    def get(self, request):
+        from .models import BusinessSetupTemplate
+        from .serializers import BusinessSetupTemplateSerializer
+        return Response(BusinessSetupTemplateSerializer(BusinessSetupTemplate.objects.filter(is_active=True), many=True).data)
+
+
+class SetupTemplateApplyView(APIView):
+    permission_classes = [IsAuthenticated, IsCompanySetupAdmin]
+
+    def post(self, request, code):
+        from rest_framework import serializers
+        from rest_framework.generics import get_object_or_404
+        from .models import BusinessSetupTemplate
+        from .services import IdempotentBusinessTemplateService
+
+        class Selection(serializers.Serializer):
+            departments = serializers.BooleanField(default=True)
+            positions = serializers.BooleanField(default=True)
+            document_categories = serializers.BooleanField(default=True)
+
+        if not isinstance(request.data, dict) or set(request.data) - {'departments', 'positions', 'document_categories'}:
+            raise ValidationError('Choose only supported template sections.')
+        payload = Selection(data=request.data)
+        payload.is_valid(raise_exception=True)
+        template = get_object_or_404(BusinessSetupTemplate, code=code, is_active=True)
+        created = IdempotentBusinessTemplateService.apply(
+            company=request.user.company, template=template,
+            selections=payload.validated_data, actor=request.user, request=request,
+        )
+        return Response({'created': created, 'template': template.code})

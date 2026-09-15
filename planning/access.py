@@ -6,7 +6,7 @@ from core.capabilities import Capabilities
 class PlanningAccessService:
     @classmethod
     def queryset(cls, *, user, queryset):
-        if not getattr(user, "company_id", None):
+        if CapabilityService.is_platform_identity(user) or not getattr(user, "company_id", None):
             return queryset.none()
         queryset = queryset.filter(company_id=user.company_id)
         profile = getattr(user, "employee_profile", None)

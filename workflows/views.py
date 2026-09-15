@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core.roles import Roles
+from core.capability_service import CapabilityService
 from core.visibility import VisibilityService
 
 from .models import (
@@ -67,8 +68,8 @@ class WorkflowDefinitionViewSet(
             )
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
         if not user.company_id:
             return queryset.none()
@@ -124,15 +125,12 @@ class WorkflowInstanceViewSet(
             )
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
         queryset = queryset.filter(
             company=user.company
         )
-
-        if user.role == Roles.ADMIN:
-            return queryset
 
         recipient_ids = {user.id}
         for permission in (

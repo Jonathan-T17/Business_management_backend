@@ -66,7 +66,9 @@ class WorkflowRuntimeService:
 
         runtimes = []
         for definition in workflow.steps.order_by("order"):
-            recipients = list(LegacyWorkflowService._resolve_recipients(definition, target, submitted_by))
+            recipients = list(LegacyWorkflowService.resolve_recipients(
+                step=definition, company=workflow.company, target=target, submitted_by=submitted_by,
+            ))
             runtime = WorkflowStepInstance.objects.create(
                 workflow_instance=instance,
                 definition_step=definition,
@@ -99,11 +101,11 @@ class WorkflowRuntimeService:
 
         WorkflowActionLog.objects.create(workflow_instance=instance, actor=submitted_by, action="SUBMITTED")
         adapter.on_submitted(target=target, actor=submitted_by, workflow_instance=instance, request=request)
-        cls._activate_next(instance=instance, target=target)
+        cls._activate_next(instance=instance, target=target, actor=submitted_by, request=request)
         return instance
 
     @classmethod
-    def _activate_next(cls, *, instance, target):
+    def _activate_next(cls, *, instance, target, actor, request=None):
         from workflows.services import WorkflowService as LegacyWorkflowService
 
         next_step = instance.steps.filter(status="WAITING").order_by("order").first()
@@ -113,7 +115,7 @@ class WorkflowRuntimeService:
             next_step.save(update_fields=["status", "started_at"])
             LegacyWorkflowService._notify_step(next_step, target)
             return
-        cls._approve_instance(instance=instance, actor=None)
+        cls._approve_instance(instance=instance, actor=actor, request=request)
 
     @classmethod
     @transaction.atomic
@@ -162,7 +164,7 @@ class WorkflowRuntimeService:
         step.status = "APPROVED"
         step.completed_at = timezone.now()
         step.save(update_fields=["status", "completed_at"])
-        cls._activate_next(instance=instance, target=target)
+        cls._activate_next(instance=instance, target=target, actor=actor, request=request)
         instance.refresh_from_db()
         if not instance.steps.filter(status__in=["WAITING", "PENDING"]).exists() and instance.status == "IN_PROGRESS":
             cls._approve_instance(instance=instance, actor=actor, request=request)
@@ -177,4 +179,46 @@ class WorkflowRuntimeService:
         instance.save(update_fields=["status", "completed_at"])
         adapter = WorkflowTargetAdapterRegistry.for_target(instance.content_object)
         adapter.on_approved(target=instance.content_object, actor=actor, workflow_instance=instance, request=request)
+        return instance
+
+    @classmethod
+    @transaction.atomic
+    def reject(cls, *, instance, actor, note="", request=None):
+        return cls._end_step(instance=instance, actor=actor, note=note, outcome="REJECTED", request=request)
+
+    @classmethod
+    @transaction.atomic
+    def return_for_changes(cls, *, instance, actor, note="", request=None):
+        return cls._end_step(instance=instance, actor=actor, note=note, outcome="RETURNED", request=request)
+
+    @classmethod
+    def _end_step(cls, *, instance, actor, note, outcome, request=None):
+        from workflows.models import WorkflowInstance, WorkflowActionLog
+        from workflows.services import WorkflowService
+        instance = WorkflowInstance.objects.select_for_update().get(pk=instance.pk)
+        if instance.status != "IN_PROGRESS" or not note.strip():
+            raise ValidationError("An active workflow and a reason are required.")
+        if actor.company_id != instance.company_id:
+            raise ValidationError("Workflow is not available to this company.")
+        target = instance.content_object
+        adapter = WorkflowTargetAdapterRegistry.for_target(target)
+        if not VisibilityService.can_view_generic_object(user=actor, obj=target):
+            adapter.assert_participant_review_allowed(target=target, actor=actor, workflow_instance=instance)
+        step = instance.steps.select_for_update().filter(status="PENDING").order_by("order").first()
+        if not step or not getattr(step, "can_reject" if outcome == "REJECTED" else "can_return"):
+            raise ValidationError("This step does not permit that action.")
+        recipient = WorkflowService._recipient_for_user(step, actor, permission=WorkflowService._delegation_permission(instance))
+        if recipient.status != "PENDING":
+            raise ValidationError("This assignment has already been acted on.")
+        recipient.status, recipient.note, recipient.acted_at = outcome, note, timezone.now()
+        recipient.save(update_fields=["status", "note", "acted_at"])
+        step.recipients.filter(status="PENDING").update(status="SKIPPED")
+        step.status, step.completed_at = outcome, timezone.now()
+        step.save(update_fields=["status", "completed_at"])
+        instance.steps.filter(status="WAITING").update(status="SKIPPED", completed_at=timezone.now())
+        instance.status, instance.completed_at = outcome, timezone.now()
+        instance.save(update_fields=["status", "completed_at"])
+        WorkflowActionLog.objects.create(workflow_instance=instance, step=step, actor=actor, action=outcome, note=note)
+        callback = adapter.on_rejected if outcome == "REJECTED" else adapter.on_returned
+        callback(target=target, actor=actor, workflow_instance=instance, request=request)
         return instance

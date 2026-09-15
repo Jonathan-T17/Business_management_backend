@@ -77,10 +77,16 @@ def send_verification_email(user, token):
     uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
     link = f"{settings.FRONTEND_URL}/verify-email/?uid={uidb64}&token={token}"
 
-    subject = "[SmartBiz AI] Verify your account"
+    company = getattr(user, "company", None)
+    company_name = company.name if company else None
+    welcome_name = company_name or "SmartBiz AI"
+    subject = (
+        f"[SmartBiz AI] Verify your account for {company_name}"
+        if company_name else "[SmartBiz AI] Verify your account"
+    )
 
     text_message = (
-        "Welcome to SmartBiz AI!\n\n"
+        f"Welcome to {welcome_name}!\n\n"
         f"Verify your account:\n{link}\n\n"
         "If you didn’t create this account, ignore this email."
     )
@@ -89,10 +95,10 @@ def send_verification_email(user, token):
     <html>
       <body style="font-family: Arial, sans-serif; background:#f9f9f9; padding:20px;">
         <div style="max-width:600px;margin:auto;background:#fff;padding:20px;border-radius:8px;">
-          <h2>Welcome to SmartBiz AI</h2>
+          <h2>Welcome to {escape(welcome_name)}</h2>
           <p>Please confirm your email:</p>
           <p style="text-align:center;">
-            <a href="{link}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;">
+            <a href="{escape(link)}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;">
               Verify Email
             </a>
           </p>

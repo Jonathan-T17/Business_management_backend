@@ -25,17 +25,20 @@ class SetupStateService:
     @transaction.atomic
     def complete_step(cls, *, company, step, actor, request=None):
         valid = {code for code, _ in SETUP_STEPS}
-        if step not in valid:
+        if not isinstance(step, str) or step not in valid:
             raise ValidationError({"step": "Unknown setup step."})
 
+        if step == "finish":
+            return cls.finish(company=company, actor=actor, request=request)
         state = cls.state_for(company)
+        state.skipped_steps = [code for code in state.skipped_steps if code != step]
         completed = list(dict.fromkeys([*state.completed_steps, step]))
         state.completed_steps = completed
 
         order = [code for code, _ in SETUP_STEPS]
         next_step = next((code for code in order if code not in completed and code not in state.skipped_steps), "")
         state.current_step = next_step
-        state.save(update_fields=["completed_steps", "current_step", "updated_at"])
+        state.save(update_fields=["completed_steps", "skipped_steps", "current_step", "updated_at"])
 
         create_audit_log(
             user=actor, company=company, request=request, action="UPDATE",
@@ -46,14 +49,21 @@ class SetupStateService:
     @classmethod
     @transaction.atomic
     def skip_step(cls, *, company, step, actor, reason, request=None):
+        if not isinstance(step, str) or step not in {code for code, _ in SETUP_STEPS}:
+            raise ValidationError({"step": "Unknown setup step."})
         if step in REQUIRED_STEPS:
             raise ValidationError({"step": "This setup step cannot be skipped."})
-        reason = (reason or "").strip()
+        if not isinstance(reason, str):
+            raise ValidationError({"reason": "A reason is required."})
+        reason = reason.strip()
         if not reason:
             raise ValidationError({"reason": "A reason is required."})
         state = cls.state_for(company)
+        if step in state.completed_steps:
+            raise ValidationError({"step": "A completed step cannot be skipped."})
         state.skipped_steps = list(dict.fromkeys([*state.skipped_steps, step]))
-        state.save(update_fields=["skipped_steps", "updated_at"])
+        state.current_step = next((code for code, _ in SETUP_STEPS if code not in state.completed_steps and code not in state.skipped_steps), "")
+        state.save(update_fields=["skipped_steps", "current_step", "updated_at"])
         create_audit_log(
             user=actor, company=company, request=request, action="UPDATE",
             description=f"Company setup step skipped: {step}.", obj=state,
@@ -70,7 +80,8 @@ class SetupStateService:
         state = cls.state_for(company)
         state.onboarding_completed = True
         state.current_step = ""
-        state.save(update_fields=["onboarding_completed", "current_step", "updated_at"])
+        state.completed_steps = list(dict.fromkeys([*state.completed_steps, "finish"]))
+        state.save(update_fields=["onboarding_completed", "completed_steps", "current_step", "updated_at"])
         create_audit_log(
             user=actor, company=company, request=request, action="UPDATE",
             description="Company onboarding completed.", obj=state,

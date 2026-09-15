@@ -1,19 +1,11 @@
 from rest_framework.permissions import BasePermission
+from core.capabilities import Capabilities
+from core.capability_service import CapabilityService
 
 
 class IsAnalyticsAdmin(BasePermission):
-    """
-    Analytics are restricted to company-level administrators
-    and the platform superuser.
-    """
-
+    """Tenant analytics requires explicit company analytics authority."""
     def has_permission(self, request, view):
-        user = request.user
-
-        if not user or not user.is_authenticated:
-            return False
-
-        return user.role in (
-            "SUPERUSER",
-            "ADMIN",
+        return CapabilityService.is_tenant_identity(request.user) and CapabilityService.has(
+            request.user, Capabilities.VIEW_COMPANY_ANALYTICS,
         )

@@ -97,3 +97,13 @@ class ReportWorkflowAdapter:
         target.save(update_fields=["status", "approved_at", "updated_at"])
         from records_management.finalizers import OfficialRecordFinalizer
         OfficialRecordFinalizer.maybe_issue(source=target, actor=actor, workflow_instance=workflow_instance, request=request)
+
+    @staticmethod
+    def on_rejected(*, target, actor, workflow_instance, request=None):
+        target.status = "REJECTED"
+        target.save(update_fields=["status", "updated_at"])
+
+    @staticmethod
+    def on_returned(*, target, actor, workflow_instance, request=None):
+        target.status = "RETURNED"
+        target.save(update_fields=["status", "updated_at"])

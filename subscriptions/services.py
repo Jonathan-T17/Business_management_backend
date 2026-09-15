@@ -135,18 +135,8 @@ class SubscriptionService:
             company
         )
 
-        current_users = company.users.filter(
-            is_deleted=False
-        ).count()
+        return SubscriptionCapacity.usage(company)["users"] < subscription.plan.max_users
 
-        pending_invitations = company.invites.filter(
-            status="PENDING",
-        ).count()
-
-        return (
-            current_users + pending_invitations
-            < subscription.plan.max_users
-        )
 
 
     @classmethod
@@ -250,21 +240,75 @@ class SubscriptionService:
 
 
 
+class SubscriptionCapacity:
+    @staticmethod
+    def usage(company):
+        return {
+            "users": company.users.filter(is_deleted=False).count() + company.invites.filter(status="PENDING").exclude(email__in=company.users.filter(is_deleted=False).values("email")).count(),
+            "projects": company.projects.filter(is_active=True).count(),
+            "branches": company.branches.filter(is_active=True).count(),
+        }
+
+    @classmethod
+    def issues(cls, company, plan):
+        usage = cls.usage(company)
+        messages = []
+        for name in ("users", "projects", "branches"):
+            limit = getattr(plan, "max_" + name)
+            if usage[name] > limit:
+                label = "user seats (including pending invitations)" if name == "users" else "active " + name
+                messages.append(f"This plan allows {limit} {name}; the company currently uses {usage[name]} {label}.")
+        return messages
+
+    @classmethod
+    def validate(cls, company, plan):
+        issues = cls.issues(company, plan)
+        if issues:
+            raise ValidationError({"plan": issues})
+
+
 class SubscriptionLifecycleService:
     @classmethod
     @transaction.atomic
     def change_plan(cls,*,subscription,new_plan,actor,reason,request=None):
-        if not CapabilityService.has(actor,Capabilities.PLATFORM_SUBSCRIPTIONS):raise PermissionDenied("Platform subscription authority is required.")
+        if not CapabilityService.has(actor,Capabilities.MANAGE_PLATFORM_SUBSCRIPTIONS):raise PermissionDenied("Platform subscription authority is required.")
         reason=(reason or "").strip()
         if not reason:raise ValidationError("A reason is required.")
-        locked=type(subscription).objects.select_for_update().get(pk=subscription.pk);old=locked.plan;locked.plan=new_plan;locked.save(update_fields=["plan","updated_at"])
-        create_audit_log(user=actor,company=locked.company,request=request,action="UPDATE",description=f"Subscription plan changed from {old.name} to {new_plan.name}.",obj=locked,metadata={"reason":reason})
+        locked=type(subscription).objects.select_for_update().get(pk=subscription.pk)
+        if not new_plan.is_active:
+            raise ValidationError({"plan": "Choose an active plan."})
+        if locked.plan_id == new_plan.pk:
+            raise ValidationError({"plan": "This subscription already uses this plan."})
+        SubscriptionCapacity.validate(locked.company, new_plan)
+        old=locked.plan
+        locked.plan=new_plan
+        locked.save(update_fields=["plan","updated_at"])
+        create_audit_log(user=actor,company=locked.company,request=request,action="UPDATE",description=f"Subscription plan changed from {old.name} to {new_plan.name}.",obj=locked,metadata={"reason":reason,"old_plan_id":old.pk,"new_plan_id":new_plan.pk})
         return locked
     @classmethod
     @transaction.atomic
     def reactivate(cls,*,subscription,actor,reason,request=None):
-        if not CapabilityService.has(actor,Capabilities.PLATFORM_SUBSCRIPTIONS):raise PermissionDenied("Platform subscription authority is required.")
+        if not CapabilityService.has(actor,Capabilities.MANAGE_PLATFORM_SUBSCRIPTIONS):raise PermissionDenied("Platform subscription authority is required.")
         reason=(reason or "").strip()
         if not reason:raise ValidationError("A reason is required.")
         locked=type(subscription).objects.select_for_update().get(pk=subscription.pk);locked.is_active=True;locked.save(update_fields=["is_active","updated_at"])
         create_audit_log(user=actor,company=locked.company,request=request,action="UPDATE",description="Subscription reactivated.",obj=locked,metadata={"reason":reason});return locked
+
+
+class TenantSubscriptionService:
+    @staticmethod
+    @transaction.atomic
+    def cancel(*, subscription, actor, reason, request=None):
+        if (CapabilityService.is_platform_identity(actor) or actor.role != "ADMIN"
+                or actor.company_id != subscription.company_id):
+            raise PermissionDenied("Company administrator access is required.")
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000:
+            raise ValidationError({"reason": "Provide a reason of up to 1,000 characters."})
+        locked = Subscription.objects.select_for_update().get(pk=subscription.pk)
+        if not locked.is_active:
+            raise ValidationError("This subscription is already cancelled.")
+        locked.is_active = False
+        locked.save(update_fields=["is_active", "updated_at"])
+        create_audit_log(user=actor, company=locked.company, request=request, action="SUBSCRIPTION_CANCELLED",
+            obj=locked, description="Company subscription cancelled.", metadata={"reason": reason.strip()})
+        return locked

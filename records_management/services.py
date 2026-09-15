@@ -10,6 +10,27 @@ from security.services import create_audit_log
 from .models import OfficialRecord, RecordSequence
 
 
+class OfficialRecordPDFService:
+    @staticmethod
+    def render(*, record):
+        from io import BytesIO
+        import json
+        from xml.sax.saxutils import escape
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        output = BytesIO()
+        styles = getSampleStyleSheet()
+        story = [Paragraph(escape(record.title), styles["Title"]),
+                 Paragraph(escape(f"{record.record_number} | {record.status}"), styles["Normal"]), Spacer(1, 12)]
+        for label, value in (("Record", record.snapshot), ("Approvals", record.approval_snapshot)):
+            story.append(Paragraph(label, styles["Heading2"]))
+            for line in json.dumps(value, indent=2, ensure_ascii=False, default=str).splitlines():
+                story.append(Paragraph(escape(line), styles["Normal"]))
+        SimpleDocTemplate(output).build(story)
+        output.seek(0)
+        return output
+
+
 class RecordNumberService:
     @staticmethod
     @transaction.atomic

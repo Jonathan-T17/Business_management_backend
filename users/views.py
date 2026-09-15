@@ -14,7 +14,7 @@ from django.utils.encoding import force_bytes
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError as APIValidationError
 
 from core.tenant import TenantService
 from core.authorization import Authorization
@@ -28,6 +28,7 @@ from .services import TenantUserLifecycleService
 from .serializers import (
     UserSerializer,
     UserUpdateSerializer,
+    ThemePreferenceSerializer,
     UserRegisterSerializer,
     CustomTokenObtainPairSerializer,
     ActiveCompanyTokenRefreshSerializer,
@@ -82,6 +83,13 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         )
         return Response(serializer.data)
 
+    @action(detail=False, methods=["patch"], permission_classes=[IsAuthenticated], url_path="me/preferences")
+    def preferences(self, request):
+        serializer = ThemePreferenceSerializer(request.user, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
 
 class ProfileViewSet(viewsets.ModelViewSet):
     serializer_class = UserUpdateSerializer
@@ -124,6 +132,10 @@ class RegisterView(APIView):
                 status=201,
             )
 
+        except ValidationError as e:
+            return Response(getattr(e, 'message_dict', {'error': e.messages}), status=400)
+        except (APIValidationError, PermissionDenied):
+            raise
         except Exception as e:
             print("Register error:", str(e))
 
@@ -347,7 +359,7 @@ class LogoutView(APIView):
 
 from user_agents import parse
 
-from security.services import verify_otp, create_audit_log, record_login, create_active_session, register_failed_attempt, clear_failed_attempts
+from security.services import verify_otp, create_audit_log, record_login, create_active_session, register_failed_attempt, clear_failed_attempts, issue_trusted_device_token, is_account_locked
 from security.models import TrustedDevice
 
 User = get_user_model()
@@ -355,22 +367,33 @@ User = get_user_model()
 
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
-    throttle_classes = [AnonRateThrottle]
+    authentication_classes = []
+    from api.throttles import VerificationRateThrottle
+    throttle_classes = [VerificationRateThrottle]
 
     @transaction.atomic
     def post(self, request):
         email = request.data.get("email")
         code = request.data.get("code")
-
+        from uuid import UUID
         try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
+            challenge_id = UUID(str(request.data.get("challenge_id", "")))
+        except (ValueError, TypeError):
+            return Response({"error": "Invalid or expired OTP"}, status=400)
+        if not isinstance(code, str):
+            return Response({"error": "Invalid or expired OTP"}, status=400)
+
+        from security.models import OTP
+        challenge = OTP.objects.select_related("user__company").filter(challenge_id=challenge_id).first()
+        if challenge is None or (email is not None and email != challenge.user.email):
+            return Response({"error": "Invalid or expired OTP"}, status=400)
+        user = challenge.user
+        email = user.email
+        if is_account_locked(email, get_client_ip(request)):
             return Response({"error": "Invalid or expired OTP"}, status=400)
 
         ua = parse(request.META.get("HTTP_USER_AGENT", ""))
-        fingerprint = f"{ua.browser.family}-{ua.os.family}-{ua.device.family}"
-
-        if not verify_otp(user, code, fingerprint):
+        if not verify_otp(user, challenge_id=challenge_id, code=code):
             # Failed OTP
             register_failed_attempt(email, get_client_ip(request), reason="Invalid OTP")
             SecurityAudit.log(
@@ -386,14 +409,14 @@ class VerifyOTPView(APIView):
         clear_failed_attempts(email, get_client_ip(request))
 
         # Trust device if user opts in
-        if request.data.get("trust_device"):
-            TrustedDevice.objects.update_or_create(
+        device_token = None
+        if request.data.get("trust_device") is True:
+            device_token, token_hash = issue_trusted_device_token()
+            TrustedDevice.objects.create(
                 user=user,
-                fingerprint=fingerprint,
-                defaults={
-                    "device_name": ua.device.family or "Unknown Device",
-                    "is_active": True,
-                },
+                token_hash=token_hash,
+                device_name=ua.device.family or "Unknown Device",
+                ip_address=get_client_ip(request),
             )
 
         # Re-check current account/company state immediately before token issuance.
@@ -424,6 +447,9 @@ class VerifyOTPView(APIView):
         return Response({
             "refresh": str(refresh),
             "access": str(refresh.access_token),
+            "device_token": device_token,
+            "trusted_device_token": device_token,
+            "otp_required": False,
             "user": {
                 "id": user.id,
                 "email": user.email,

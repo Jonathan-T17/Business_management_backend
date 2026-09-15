@@ -28,34 +28,34 @@ class SetupReadinessService:
         checks.append(Check(
             "COMPANY_PROFILE", "ERROR" if missing else "INFO", not missing,
             "Complete company profile." if missing else "Company profile complete.",
-            "/settings/company", blocking=bool(missing),
+            "/settings/company-profile", blocking=bool(missing),
         ))
 
         branches = Branch.objects.filter(company=company, is_active=True).exists()
         checks.append(Check("ACTIVE_BRANCH", "WARNING", branches,
                             "Add an active headquarters or branch." if not branches else "Active branch configured.",
-                            "/settings/organization"))
+                            "/branches"))
 
         departments = Department.objects.filter(company=company, is_active=True).exists()
         checks.append(Check("ACTIVE_DEPARTMENT", "WARNING", departments,
                             "Add an active department." if not departments else "Department configured.",
-                            "/settings/organization"))
+                            "/departments"))
 
         positions = Position.objects.filter(company=company).exists()
         checks.append(Check("POSITIONS", "WARNING", positions,
                             "Create at least one position." if not positions else "Positions configured.",
-                            "/settings/organization"))
+                            "/employees/positions"))
 
         active_employees = EmployeeProfile.objects.filter(company=company, status="ACTIVE")
         without_position = active_employees.filter(position__isnull=True).count()
         checks.append(Check("EMPLOYEE_POSITIONS", "WARNING", without_position == 0,
                             f"{without_position} active employees have no position." if without_position else "Active employees have positions.",
-                            "/settings/employees"))
+                            "/employees"))
 
         presets = RolePreset.objects.filter(company=company, is_active=True).exists() or RolePreset.objects.filter(company__isnull=True, is_system=True, is_active=True).exists()
         checks.append(Check("ROLE_PRESETS", "ERROR" if not presets else "INFO", presets,
                             "Configure at least one safe role preset." if not presets else "Role presets available.",
-                            "/settings/permissions", blocking=not presets))
+                            "/settings/roles-permissions", blocking=not presets))
 
         return checks
 
@@ -73,4 +73,8 @@ class SetupReadinessService:
             "blocking_count": len(blocking),
             "warning_count": len(warnings),
             "checks": [c.__dict__ for c in checks],
+            "issues": [
+                {"code": c.code, "severity": c.severity, "message": c.message, "url": c.destination}
+                for c in checks if not c.passed
+            ],
         }

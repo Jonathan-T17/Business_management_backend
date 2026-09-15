@@ -35,6 +35,14 @@ class PlanSerializer(serializers.ModelSerializer):
 
 class SubscriptionSerializer(serializers.ModelSerializer):
 
+    allowed_actions = serializers.SerializerMethodField()
+
+    def get_allowed_actions(self, obj):
+        user = getattr(self.context.get("request"), "user", None)
+        if user and user.role == "ADMIN" and not user.is_superuser and user.company_id == obj.company_id and obj.is_active:
+            return ["CANCEL"]
+        return []
+
     plan = PlanSerializer(
         read_only=True
     )
@@ -64,6 +72,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         model = Subscription
 
         fields = [
+            "allowed_actions",
             "id",
             "company",
             "company_name",

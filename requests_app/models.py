@@ -80,10 +80,13 @@ class BusinessRequest(models.Model):
         db_index=True,
     )
 
-    request_type = models.CharField(
-        max_length=30,
-        choices=REQUEST_TYPES,
+    request_type = models.CharField(max_length=100)
+
+    request_type_definition = models.ForeignKey(
+        "company_setup.RequestTypeDefinition", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="requests",
     )
+    request_type_snapshot = models.JSONField(default=dict, blank=True)
 
     priority = models.CharField(
         max_length=20,
@@ -142,6 +145,8 @@ class BusinessRequest(models.Model):
         on_delete=models.SET_NULL,
         related_name="business_requests",
     )
+
+    form_submission = models.OneToOneField('forms_engine.FormSubmission', null=True, blank=True, on_delete=models.PROTECT, related_name='business_request')
 
     workflow = models.ForeignKey(
         "workflows.WorkflowDefinition",

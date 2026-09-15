@@ -61,7 +61,7 @@ class ActiveSessionAdmin(admin.ModelAdmin):
 @admin.register(FailedLoginAttempt)
 class FailedLoginAttemptAdmin(admin.ModelAdmin):
     list_display = (
-        "email",
+        "email_hint",
         "ip_address",
         "attempts",
         "locked_until",

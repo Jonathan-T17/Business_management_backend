@@ -103,6 +103,10 @@ class FormTemplate(models.Model):
         related_name="form_templates",
     )
 
+    supersedes = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="revisions")
+    audience_roles = models.JSONField(default=list, blank=True)
+    audience_user_ids = models.JSONField(default=list, blank=True)
+
     version = models.PositiveIntegerField(
         default=1,
     )
@@ -146,8 +150,9 @@ class FormTemplate(models.Model):
                 fields=[
                     "company",
                     "code",
+                    "version",
                 ],
-                name="unique_company_form_template_code",
+                name="unique_company_form_template_version",
             )
         ]
 
@@ -160,6 +165,16 @@ class FormTemplate(models.Model):
                 ]
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        from django.core.exceptions import ValidationError
+        if self.pk:
+            old=type(self).objects.filter(pk=self.pk).first()
+            if old and (old.lifecycle_status != 'DRAFT' or old.submissions.exists()):
+                protected=('company_id','code','name','description','category','branch_id','department_id','team_id','workflow_id','version','allow_drafts','audience_roles','audience_user_ids','supersedes_id')
+                if any(getattr(old,key)!=getattr(self,key) for key in protected):
+                    raise ValidationError('Published or used forms are immutable. Create a draft revision.')
+        super().save(*args,**kwargs)
 
     def __str__(self):
         return (
@@ -265,6 +280,8 @@ class FormField(models.Model):
         default=True,
     )
 
+    classification = models.CharField(max_length=40, default="NORMAL")
+
     class Meta:
         ordering = [
             "order",
@@ -280,6 +297,18 @@ class FormField(models.Model):
                 name="unique_form_field_key",
             )
         ]
+
+    def save(self, *args, **kwargs):
+        from django.core.exceptions import ValidationError
+        if self.template.lifecycle_status!='DRAFT' or self.template.submissions.exists():
+            raise ValidationError('Fields in published or used forms are immutable.')
+        super().save(*args,**kwargs)
+
+    def delete(self, *args, **kwargs):
+        from django.core.exceptions import ValidationError
+        if self.template.lifecycle_status!='DRAFT' or self.template.submissions.exists():
+            raise ValidationError('Fields in published or used forms are immutable.')
+        return super().delete(*args,**kwargs)
 
     def __str__(self):
         return (
@@ -476,3 +505,27 @@ class FormSubmission(models.Model):
             f"{self.reference_number} - "
             f"{self.template.name}"
         )
+
+class FormStarter(models.Model):
+    code=models.SlugField(max_length=100,unique=True)
+    name=models.CharField(max_length=255)
+    description=models.TextField(blank=True)
+    category=models.CharField(max_length=30,choices=FormTemplate.CATEGORY_CHOICES,default='CUSTOM')
+    field_schema=models.JSONField(default=list)
+    is_active=models.BooleanField(default=True)
+    updated_at=models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        from .serializers import FormFieldSerializer
+        from .versioning import FormTemplateVersionService
+        from django.core.exceptions import ValidationError
+        from rest_framework.exceptions import APIException
+        fields=FormFieldSerializer(data=self.field_schema,many=True)
+        try:
+            fields.is_valid(raise_exception=True)
+            FormTemplateVersionService.validate(actor=None,company=None,data={},fields=fields.validated_data,starter=True)
+        except APIException as exc:
+            raise ValidationError({'field_schema':str(exc.detail)})
+        self.field_schema=list(fields.validated_data)
+
+    def __str__(self): return self.name

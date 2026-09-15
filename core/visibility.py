@@ -221,6 +221,8 @@ class VisibilityService:
             model=FormSubmission,
             delegated_permission="REVIEW_SUBMISSIONS",
         )
+        if not any(CapabilityService.has(user,cap) for cap in (Capabilities.VIEW_FORM_SUBMISSIONS,Capabilities.REVIEW_SUBMISSIONS)):
+            return queryset.filter(submitted_by=user)
         return queryset.filter(
             Q(submitted_by=user) | Q(id__in=[str(item) for item in workflow_ids])
         ).distinct()
@@ -316,6 +318,9 @@ class VisibilityService:
         if key == ("reports", "report"):
             return cls.can_view_report(user=user, report=target)
         if key == ("forms_engine", "formsubmission"):
+            from forms_engine.attachments import can_read_files
+            if not can_read_files(user, target):
+                return False
             return cls.form_submissions_queryset(
                 user=user, queryset=target.__class__.objects.filter(pk=target.pk)
             ).exists()

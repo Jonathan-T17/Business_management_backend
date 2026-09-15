@@ -2,7 +2,7 @@ from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -43,12 +43,15 @@ class OfficialRecordViewSet(viewsets.ReadOnlyModelViewSet):
 		):
 			raise PermissionDenied("You cannot export official records.")
 
+		purpose = request.query_params.get("purpose", "").strip()
+		if not purpose or len(purpose) > 255:
+			raise ValidationError({"purpose": "Provide an export purpose of up to 255 characters."})
 		RecordExport.objects.create(
 			company=record.company,
 			record=record,
 			export_format="PDF",
 			exported_by=request.user,
-			purpose=request.query_params.get("purpose", ""),
+			purpose=purpose,
 		)
 		return FileResponse(
 			OfficialRecordPDFService.render(record=record),

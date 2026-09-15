@@ -203,6 +203,7 @@ class WorkflowStepDefinition(models.Model):
 # ============================================================
 
 class WorkflowInstance(models.Model):
+    workflow_version = models.PositiveIntegerField(default=1)
 
     STATUS_CHOICES = (
         ("IN_PROGRESS", "In Progress"),
@@ -290,6 +291,7 @@ class WorkflowInstance(models.Model):
 # ============================================================
 
 class WorkflowStepInstance(models.Model):
+    routing_snapshot = models.JSONField(default=dict, blank=True)
 
     STATUS_CHOICES = (
         ("WAITING", "Waiting"),

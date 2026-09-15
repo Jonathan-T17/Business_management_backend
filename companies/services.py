@@ -83,7 +83,10 @@ class CompanyInviteService:
             raise PermissionDenied("This invitation was issued to a different email address.")
         if user.company_id and user.company_id != invite.company_id:
             raise ValidationError("You already belong to another company.")
-        if not SubscriptionService.can_add_user(invite.company):
+        from subscriptions.services import SubscriptionCapacity
+        type(invite.company).objects.select_for_update().get(pk=invite.company_id)
+        subscription = SubscriptionService.require_active(invite.company)
+        if SubscriptionCapacity.usage(invite.company)["users"] > subscription.plan.max_users:
             raise ValidationError("The subscription user limit has been reached.")
 
         user.company = invite.company

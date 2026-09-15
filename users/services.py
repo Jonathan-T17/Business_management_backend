@@ -31,16 +31,31 @@ class UserService:
             raise ValidationError({"invite": "Invitation is expired or no longer valid."})
         if email.lower().strip() != invite.email.lower():
             raise ValidationError({"email": "This email does not match the invitation."})
-        if User.objects.filter(email__iexact=email).exists():
-            raise ValidationError({"email": "A user with this email already exists."})
+        existing = User.objects.select_for_update().filter(email__iexact=email).first()
+        if existing:
+            from data_tools.models import ImportJob
+            imported = ImportJob.objects.filter(company=invite.company, status="COMPLETED",
+                import_type="EMPLOYEES", validation_result__valid_rows__contains=[{"email":email.strip().lower()}]).exists()
+            if (not imported or existing.company_id != invite.company_id or existing.is_active
+                    or existing.email_verified or existing.is_deleted or existing.is_superuser
+                    or existing.is_staff or existing.role != Roles.EMPLOYEE or existing.has_usable_password()
+                    or existing.account_state != "PENDING_VERIFICATION"):
+                raise ValidationError({"email": "A user with this email already exists."})
         if invite.role == Roles.SUPERUSER:
             raise ValidationError({"invite": "Platform roles cannot be assigned through tenant invitations."})
 
-        user = User.objects.create_user(
-            email=email.lower().strip(), full_name=full_name, password=password,
-            company=invite.company, role=invite.role, is_active=False,
-            email_verified=False, account_state="PENDING_VERIFICATION",
-        )
+        if existing:
+            from django.contrib.auth.password_validation import validate_password
+            validate_password(password, user=existing)
+            user = existing
+            user.set_password(password)
+            user.save(update_fields=["password"])
+        else:
+            user = User.objects.create_user(
+                email=email.lower().strip(), full_name=full_name, password=password,
+                company=invite.company, role=invite.role, is_active=False,
+                email_verified=False, account_state="PENDING_VERIFICATION",
+            )
         CompanyInviteService.accept_invite(invite=invite, user=user)
         return user
 

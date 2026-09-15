@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.utils import timezone
 
 from rest_framework import (
@@ -120,7 +121,7 @@ class FieldActivityViewSet(
 
         activity = self.get_object()
 
-        FieldOperationService.start_activity(
+        activity = FieldOperationService.start_activity(
             activity=activity,
             user=request.user,
             latitude=
@@ -154,7 +155,7 @@ class FieldActivityViewSet(
 
         activity = self.get_object()
 
-        FieldOperationService.complete_activity(
+        activity = FieldOperationService.complete_activity(
             activity=activity,
             user=request.user,
             latitude=
@@ -270,26 +271,30 @@ class FieldStopViewSet(
             )
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
-
-        queryset = queryset.filter(
-            activity__company=user.company
+        visible_activities = VisibilityService.field_activities_queryset(
+            user=user, queryset=FieldActivity.objects.all(),
         )
+        return queryset.filter(activity__in=visible_activities)
 
-        if user.role == Roles.ADMIN:
-            return queryset
 
-        if user.role == Roles.MANAGER:
-            return queryset.filter(
-                activity__branch=
-                    user.branch
-            )
-
-        return queryset.filter(
-            activity__employee=user
-        )
-
+    @action(detail=True,methods=['post'],url_path='start-form')
+    @transaction.atomic
+    def start_form(self,request,pk=None):
+        from forms_engine.services import FormSubmissionService
+        from company_setup.models import FieldActivityTemplate
+        from rest_framework.generics import get_object_or_404
+        stop=self.get_object()
+        stop=FieldStop.objects.select_for_update().get(pk=stop.pk)
+        if stop.activity.employee_id!=request.user.id or stop.status not in {'PENDING','ARRIVED'}:
+            raise ValidationError('Only the assigned worker may start a form for an unfinished stop.')
+        if stop.form_submission_id:
+            return Response({'id':str(stop.form_submission_id)})
+        configuration=get_object_or_404(FieldActivityTemplate,pk=request.data.get('configuration'),company=request.user.company,activity_type=stop.activity.activity_type,is_active=True)
+        if not configuration.form_template_id:
+            raise ValidationError('This configuration has no form.')
+        submission=FormSubmissionService.create_submission(template=configuration.form_template,user=request.user,title=stop.location_name)
+        stop.form_submission=submission;stop.save(update_fields=['form_submission'])
+        return Response({'id':str(submission.pk)},status=201)
 
     @action(
         detail=True,
@@ -304,7 +309,7 @@ class FieldStopViewSet(
 
         stop = self.get_object()
 
-        FieldOperationService.arrive_stop(
+        stop = FieldOperationService.arrive_stop(
             stop=stop,
             user=request.user,
             latitude=
@@ -338,7 +343,7 @@ class FieldStopViewSet(
 
         stop = self.get_object()
 
-        FieldOperationService.complete_stop(
+        stop = FieldOperationService.complete_stop(
             stop=stop,
             user=request.user,
             notes=

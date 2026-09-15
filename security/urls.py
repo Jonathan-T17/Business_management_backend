@@ -6,9 +6,12 @@ from .views import (
     LoginHistoryAdminViewSet,
     CompanyAuditLogViewSet,
     CompanyActiveSessionViewSet,
+    MySessionViewSet,
 )
 
 router = DefaultRouter()
+router.register(r"security/sessions", MySessionViewSet, basename="my-security-session")
+router.register(r"security/trusted-devices", TrustedDeviceViewSet, basename="my-trusted-device")
 router.register(r"trusted-devices", TrustedDeviceViewSet, basename="trusted-device")
 router.register(r"admin/trusted-devices", TrustedDeviceAdminViewSet, basename="trusted-device-admin")
 router.register(r"admin/audit-logs", AuditLogAdminViewSet, basename="audit-log-admin")

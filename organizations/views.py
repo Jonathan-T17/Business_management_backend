@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from core.roles import Roles
 from core.capabilities import Capabilities
+from core.capability_service import CapabilityService
 from security.services import create_audit_log
 
 from companies.models import Branch
@@ -56,6 +57,7 @@ from .services import (
 
 from .permissions import (
     OrganizationPermission,
+    CanManageOrganization,
     IsOrganizationAdmin,
     IsOrganizationManager,
     CanViewOrganization,
@@ -84,6 +86,7 @@ class OrganizationBaseViewSet(viewsets.ModelViewSet):
     permission_classes = [
         IsAuthenticated,
         OrganizationPermission,
+    CanManageOrganization,
     ]
 
     # --------------------------------------------------------
@@ -92,9 +95,6 @@ class OrganizationBaseViewSet(viewsets.ModelViewSet):
 
     def get_company(self):
         return getattr(self.request.user, "company", None)
-
-    def is_superuser(self):
-        return self.request.user.role == Roles.SUPERUSER
 
     def is_admin(self):
         return self.request.user.role == Roles.ADMIN
@@ -110,14 +110,9 @@ class OrganizationBaseViewSet(viewsets.ModelViewSet):
     # --------------------------------------------------------
 
     def require_company(self):
-        """
-        Organization resources require a company context.
-
-        Platform superusers may exist without being attached
-        to a company, therefore company-dependent operations
-        must explicitly provide a company context through the
-        authenticated user or another higher-level workflow.
-        """
+        """Require a tenant identity before company-dependent mutations."""
+        if not CapabilityService.is_tenant_identity(self.request.user):
+            raise PermissionDenied("A tenant account is required.")
 
         company = self.get_company()
 
@@ -182,8 +177,8 @@ class DepartmentViewSet(OrganizationBaseViewSet):
             "created_by",
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
         queryset = queryset.filter(
             company_id=user.company_id
@@ -215,7 +210,7 @@ class DepartmentViewSet(OrganizationBaseViewSet):
 
         return [
             IsAuthenticated(),
-            IsOrganizationAdmin(),
+            CanManageOrganization(),
         ]
 
     # --------------------------------------------------------
@@ -294,8 +289,8 @@ class TeamViewSet(OrganizationBaseViewSet):
             "created_by",
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
         queryset = queryset.filter(
             company_id=user.company_id
@@ -327,7 +322,7 @@ class TeamViewSet(OrganizationBaseViewSet):
 
         return [
             IsAuthenticated(),
-            IsOrganizationAdmin(),
+            CanManageOrganization(),
         ]
 
     # --------------------------------------------------------
@@ -388,8 +383,8 @@ class PositionViewSet(OrganizationBaseViewSet):
             "company",
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
         return queryset.filter(
             company_id=user.company_id
@@ -411,7 +406,7 @@ class PositionViewSet(OrganizationBaseViewSet):
 
         return [
             IsAuthenticated(),
-            IsOrganizationAdmin(),
+            CanManageOrganization(),
         ]
 
     # --------------------------------------------------------
@@ -493,8 +488,8 @@ class EmployeeProfileViewSet(OrganizationBaseViewSet):
             "position",
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
         queryset = queryset.filter(
             company_id=user.company_id
@@ -1325,10 +1320,13 @@ class EmployeeDelegationViewSet(viewsets.ModelViewSet):
             "created_by",
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
         queryset = queryset.filter(company=user.company)
+
+        if self.request.query_params.get("delegator"):
+            queryset = queryset.filter(from_user__employee_profile__id=self.request.query_params["delegator"])
 
         if user.role == Roles.ADMIN:
             return queryset
@@ -1373,10 +1371,15 @@ class EmployeeCompensationViewSet(viewsets.ReadOnlyModelViewSet):
             "created_by",
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
-        return queryset.filter(company=user.company)
+        queryset = queryset.filter(company=user.company)
+        if self.request.query_params.get("employee"):
+            queryset = queryset.filter(employee_id=self.request.query_params["employee"])
+        if self.request.query_params.get("is_current") == "true":
+            queryset = queryset.filter(is_current=True)
+        return queryset
 
     @action(
         detail=False,
@@ -1393,9 +1396,7 @@ class EmployeeCompensationViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        employee_lookup = {"id": employee_id}
-        if request.user.role != Roles.SUPERUSER:
-            employee_lookup["company"] = request.user.company
+        employee_lookup = {"id": employee_id, "company": request.user.company}
 
         try:
             employee = EmployeeProfile.objects.get(**employee_lookup)
@@ -1453,10 +1454,13 @@ class UserCapabilityGrantViewSet(viewsets.ReadOnlyModelViewSet):
             "revoked_by",
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
-        return queryset.filter(company=user.company)
+        queryset = queryset.filter(company=user.company)
+        if self.request.query_params.get("user"):
+            queryset = queryset.filter(user_id=self.request.query_params["user"])
+        return queryset
 
     @action(detail=False, methods=["post"], url_path="grant")
     def grant(self, request):
@@ -1515,8 +1519,8 @@ class PositionCapabilityGrantViewSet(viewsets.ReadOnlyModelViewSet):
             "position",
             "granted_by",
         )
-        if self.request.user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(self.request.user):
+            return queryset.none()
         return queryset.filter(company=self.request.user.company)
 
     @action(detail=False, methods=["post"], url_path="grant")
@@ -1675,8 +1679,8 @@ class EmployeeTransferViewSet(
             "approved_by",
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
         queryset = queryset.filter(
             employee__company_id=user.company_id
@@ -1752,8 +1756,8 @@ class EmployeeNoteViewSet(
             "author",
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
         queryset = queryset.filter(
             employee__company_id=user.company_id
@@ -1785,8 +1789,8 @@ class EmployeeNoteViewSet(
 
         # Company isolation
         if (
-            user.role != Roles.SUPERUSER
-            and employee.company_id != user.company_id
+            not CapabilityService.is_tenant_identity(user)
+            or employee.company_id != user.company_id
         ):
             raise PermissionDenied(
                 "You cannot add a note to an employee "

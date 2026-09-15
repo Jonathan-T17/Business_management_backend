@@ -31,6 +31,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
     user_timezone = models.CharField(max_length=100, default="UTC")
     preferred_language = models.CharField(max_length=20, default="en")
+    theme_preference = models.CharField(
+        max_length=6,
+        choices=(("system", "System"), ("light", "Light"), ("dark", "Dark")),
+        default="system",
+    )
     last_login_ip = models.GenericIPAddressField(blank=True, null=True)
     last_activity = models.DateTimeField(null=True, blank=True)
     mfa_enabled = models.BooleanField(default=False)

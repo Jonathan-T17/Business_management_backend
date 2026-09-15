@@ -1,3 +1,5 @@
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from django.db.models import Q
 
 from rest_framework import viewsets
@@ -45,57 +47,33 @@ class CompanyPlanViewSet(
 
     def get_queryset(self):
 
-        user = self.request.user
-
-        queryset = (
-            CompanyPlan.objects
-            .select_related(
-                "company",
-                "branch",
-                "department",
-                "created_by",
-                "owner",
-            )
-            .prefetch_related(
-                "items"
-            )
+        from .access import PlanningAccessService
+        return PlanningAccessService.queryset(
+            user=self.request.user,
+            queryset=CompanyPlan.objects.select_related("company", "branch", "department", "owner", "created_by").prefetch_related("items"),
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
+    def _transition(self, status):
+        from .services import PlanningService
+        plan = PlanningService.transition(plan=self.get_object(), user=self.request.user,
+                                          to_status=status, request=self.request)
+        return Response(self.get_serializer(plan).data)
 
-        queryset = queryset.filter(
-            company=user.company
-        )
+    @action(detail=True, methods=["post"])
+    def activate(self, request, pk=None):
+        return self._transition("ACTIVE")
 
-        if user.role == Roles.ADMIN:
-            return queryset
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        return self._transition("COMPLETED")
 
-        profile = getattr(
-            user,
-            "employee_profile",
-            None,
-        )
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        return self._transition("CANCELLED")
 
-        return queryset.filter(
-            Q(visibility="COMPANY")
-            |
-            Q(owner=user)
-            |
-            Q(
-                visibility="BRANCH",
-                branch=user.branch,
-            )
-            |
-            Q(
-                visibility="DEPARTMENT",
-                department=getattr(
-                    profile,
-                    "department",
-                    None,
-                ),
-            )
-        ).distinct()
+    @action(detail=True, methods=["post"])
+    def archive(self, request, pk=None):
+        return self._transition("ARCHIVED")
 
     def perform_create(
         self,
@@ -138,12 +116,9 @@ class PlanItemViewSet(
             )
         )
 
-        if user.role == Roles.SUPERUSER:
-            return queryset
-
-        return queryset.filter(
-            plan__company=user.company
-        )
+        from .access import PlanningAccessService
+        visible_plans = PlanningAccessService.queryset(user=user, queryset=CompanyPlan.objects.all())
+        return queryset.filter(plan__in=visible_plans)
 
     def perform_create(
         self,

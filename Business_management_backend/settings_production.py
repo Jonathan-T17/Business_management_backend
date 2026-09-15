@@ -41,9 +41,14 @@ CELERY_TASK_TIME_LIMIT = 900
 CELERY_TASK_SOFT_TIME_LIMIT = 840
 CELERY_BEAT_SCHEDULER = "celery.beat:PersistentScheduler"
 
-DEFAULT_FILE_STORAGE = "storages.backends.s3.S3Storage"
+STORAGES = {
+    "default": {"BACKEND": "storages.backends.s3.S3Storage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+MIDDLEWARE.insert(MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,
+                  "whitenoise.middleware.WhiteNoiseMiddleware")
 AWS_STORAGE_BUCKET_NAME = config("OBJECT_STORAGE_BUCKET")
-AWS_S3_ENDPOINT_URL = config("OBJECT_STORAGE_ENDPOINT", default=None)
+AWS_S3_ENDPOINT_URL = config("OBJECT_STORAGE_ENDPOINT", default="") or None
 AWS_ACCESS_KEY_ID = config("OBJECT_STORAGE_ACCESS_KEY")
 AWS_SECRET_ACCESS_KEY = config("OBJECT_STORAGE_SECRET_KEY")
 AWS_QUERYSTRING_AUTH = True
@@ -62,7 +67,7 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {"jsonish": {"format": "%(asctime)s %(levelname)s %(name)s request_id=%(request_id)s %(message)s"}},
+    "formatters": {"jsonish": {"format": "%(asctime)s %(levelname)s %(name)s request_id=%(request_id)s %(message)s", "defaults": {"request_id": "-"}}},
     "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "jsonish"}},
     "root": {"handlers": ["console"], "level": config("LOG_LEVEL", default="INFO")},
 }

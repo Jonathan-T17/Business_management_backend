@@ -11,7 +11,7 @@ class AnalyticsSnapshotSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AnalyticsSnapshot
-        fields = "__all__"
+        fields = ('id', 'snapshot_type', 'total_tasks', 'completed_tasks', 'pending_tasks', 'in_progress_tasks', 'blocked_tasks', 'overdue_tasks', 'total_projects', 'active_projects', 'total_reports', 'total_comments', 'completion_rate', 'overdue_rate', 'collaboration_score', 'workload_balance_score', 'ai_summary', 'generated_at', 'company', 'branch', 'project')
         read_only_fields = (
             "id",
             "company",
@@ -23,7 +23,7 @@ class AIInsightSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AIInsight
-        fields = "__all__"
+        fields = ('id', 'insight_type', 'severity', 'status', 'title', 'summary', 'metrics', 'generated_at', 'resolved_at', 'company', 'branch', 'project', 'user')
         read_only_fields = (
             "id",
             "company",
@@ -36,7 +36,7 @@ class AIAnalyticsRecordSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AIAnalyticsRecord
-        fields = "__all__"
+        fields = ('id', 'level', 'summary', 'metrics', 'generated_at', 'company', 'branch', 'project', 'user')
         read_only_fields = (
             "id",
             "company",

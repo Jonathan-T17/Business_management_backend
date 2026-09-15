@@ -28,6 +28,13 @@ class AttachmentSerializer(
     serializers.ModelSerializer
 ):
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.content_type.app_label == 'forms_engine' and instance.content_type.model == 'formsubmission':
+            data['file'] = None
+            data['file_url'] = None
+        return data
+
     file_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -169,21 +176,13 @@ class AttachmentSerializer(
             "file"
         ]
 
-        return Attachment.objects.create(
-            company=company,
-            uploaded_by=
-                request.user,
-
-            original_filename=
-                file.name,
-
-            mime_type=
-                mime_type,
-
-            file_size=
-                file.size,
-
-            **validated_data,
+        from .services import AttachmentService
+        return AttachmentService.create(
+            actor=request.user,
+            parent=validated_data['content_type'].get_object_for_this_type(pk=validated_data['object_id']),
+            file=file, original_filename=file.name, mime_type=mime_type, file_size=file.size,
+            attachment_type=validated_data.get('attachment_type', 'FILE'),
+            description=validated_data.get('description', ''),
         )
 
 

@@ -131,6 +131,8 @@ class WorkflowDefinitionSerializer(
         validated_data,
     ):
 
+        if instance.form_templates.exclude(lifecycle_status='DRAFT').exists() or instance.instances.exists():
+            raise serializers.ValidationError('This approval route is pinned to published forms or existing approvals. Create a new route.')
         steps = validated_data.pop(
             "steps",
             None,

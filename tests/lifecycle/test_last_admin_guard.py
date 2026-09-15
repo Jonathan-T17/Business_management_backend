@@ -1,5 +1,5 @@
 import pytest
-from rest_framework.exceptions import ValidationError
+from django.core.exceptions import ValidationError
 
 @pytest.mark.django_db
 def test_last_active_company_admin_cannot_be_deactivated(django_user_model):

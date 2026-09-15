@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import (
     status,
     viewsets,
@@ -23,6 +24,7 @@ from rest_framework.exceptions import (
 from django.http import FileResponse
 
 from core.roles import Roles
+from core.capability_service import CapabilityService
 from core.visibility import VisibilityService
 
 from .models import (
@@ -128,6 +130,7 @@ class AttachmentViewSet(
             filename=attachment.original_filename,
         )
 
+    @transaction.atomic
     def perform_destroy(
         self,
         instance,
@@ -138,7 +141,6 @@ class AttachmentViewSet(
         if (
             user.role
             not in (
-                Roles.SUPERUSER,
                 Roles.ADMIN,
             )
             and instance.uploaded_by_id
@@ -148,6 +150,13 @@ class AttachmentViewSet(
                 "You cannot remove "
                 "this attachment."
             )
+
+        if instance.content_type.app_label == 'forms_engine' and instance.content_type.model == 'formsubmission':
+            from forms_engine.attachments import can_edit_files
+            parent = instance.content_object
+            parent = type(parent).objects.select_for_update().get(pk=parent.pk)
+            if not can_edit_files(user, parent):
+                raise ValidationError('Attachments are locked for this submission.')
 
         instance.is_active = False
 
@@ -196,11 +205,8 @@ class DocumentCategoryViewSet(
             )
         )
 
-        if (
-            user.role
-            == Roles.SUPERUSER
-        ):
-            return queryset
+        if not CapabilityService.is_tenant_identity(user):
+            return queryset.none()
 
         return queryset.filter(
             company=user.company
@@ -247,6 +253,7 @@ class DocumentViewSet(
         if self.action in (
             "list",
             "retrieve",
+            "download",
         ):
             return [
                 IsAuthenticated()
@@ -256,6 +263,34 @@ class DocumentViewSet(
             IsAuthenticated(),
             CanManageDocuments(),
         ]
+
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        from rest_framework.exceptions import NotFound
+        from .access import DocumentAccessService
+        from security.services import create_audit_log
+        document = self.get_object()
+        if not DocumentAccessService.can_download(user=request.user, document=document):
+            raise PermissionDenied("You cannot download this document.")
+        version = document.versions.filter(version_number=document.current_version).first()
+        if not version or not version.file:
+            raise NotFound("The current document file is unavailable.")
+        try:
+            stream = version.file.open("rb")
+        except FileNotFoundError:
+            raise NotFound("The current document file is unavailable.")
+        try:
+            create_audit_log(user=request.user, company=document.company, request=request,
+                             action="DOWNLOAD", obj=document,
+                             description="Document downloaded.", metadata={"version":version.version_number})
+        except Exception:
+            stream.close()
+            raise
+        response = FileResponse(stream, as_attachment=True, filename=version.original_filename,
+                                content_type="application/octet-stream")
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
     def get_queryset(self):
 

@@ -32,6 +32,7 @@ class FormFieldSerializer(
             "help_text",
 
             "field_type",
+            "classification",
 
             "required",
             "order",
@@ -52,6 +53,21 @@ class FormFieldSerializer(
 class FormTemplateSerializer(
     serializers.ModelSerializer
 ):
+
+    allowed_actions = serializers.SerializerMethodField()
+
+    def get_allowed_actions(self, obj):
+        from .access import FormAccess
+        from core.capabilities import Capabilities as C
+        user=self.context['request'].user
+        actions=[]
+        if FormAccess.has(user,C.MANAGE_FORM_TEMPLATES):
+            actions.extend(['UPDATE','COPY'])
+        if FormAccess.has(user,C.PUBLISH_FORM_TEMPLATES):
+            if obj.lifecycle_status=='DRAFT': actions.append('PUBLISH')
+            if obj.lifecycle_status!='ARCHIVED': actions.append('ARCHIVE')
+        if FormAccess.eligible(user,obj): actions.append('START')
+        return actions
 
     fields = FormFieldSerializer(
         many=True
@@ -80,6 +96,10 @@ class FormTemplateSerializer(
             "version",
 
             "allow_drafts",
+            "audience_roles",
+            "audience_user_ids",
+            "supersedes",
+            "allowed_actions",
             "is_active",
             "lifecycle_status",
 
@@ -94,6 +114,9 @@ class FormTemplateSerializer(
         read_only_fields = (
             "company",
             "created_by",
+            "supersedes",
+            "is_active",
+            "lifecycle_status",
             "version",
             "created_at",
             "updated_at",
@@ -179,96 +202,17 @@ class FormTemplateSerializer(
 
         return attrs
 
-    @transaction.atomic
-    def create(
-        self,
-        validated_data,
-    ):
+    def create(self, validated_data):
+        from .versioning import FormTemplateVersionService
+        fields=validated_data.pop('fields')
+        company=validated_data.pop('company', self.context['request'].user.company)
+        validated_data.pop('created_by',None)
+        return FormTemplateVersionService.create_draft(company=company,actor=self.context['request'].user,data=validated_data,fields=fields)
 
-        fields_data = (
-            validated_data.pop(
-                "fields"
-            )
-        )
-
-        template = (
-            FormTemplate.objects.create(
-                **validated_data
-            )
-        )
-
-        self._replace_fields(
-            template,
-            fields_data,
-        )
-
-        return template
-
-    @transaction.atomic
-    def update(
-        self,
-        instance,
-        validated_data,
-    ):
-
-        fields_data = (
-            validated_data.pop(
-                "fields",
-                None,
-            )
-        )
-
-        for key, value in (
-            validated_data.items()
-        ):
-            setattr(
-                instance,
-                key,
-                value,
-            )
-
-        # Every structural update creates
-        # a new template version.
-        instance.version += 1
-
-        instance.save()
-
-        if fields_data is not None:
-            self._replace_fields(
-                instance,
-                fields_data,
-            )
-
-        return instance
-
-    @staticmethod
-    def _replace_fields(
-        template,
-        fields_data,
-    ):
-
-        keys = [
-            field["key"]
-            for field in fields_data
-        ]
-
-        if (
-            len(keys)
-            != len(set(keys))
-        ):
-            raise serializers.ValidationError({
-                "fields":
-                    "Form field keys must be unique."
-            })
-
-        template.fields.all().delete()
-
-        for field_data in fields_data:
-
-            FormField.objects.create(
-                template=template,
-                **field_data,
-            )
+    def update(self, instance, validated_data):
+        from .versioning import FormTemplateVersionService
+        fields=validated_data.pop('fields',None)
+        return FormTemplateVersionService.revise(template=instance,actor=self.context['request'].user,data=validated_data,fields=fields)
 
 
 # ============================================================
@@ -278,6 +222,18 @@ class FormTemplateSerializer(
 class FormSubmissionSerializer(
     serializers.ModelSerializer
 ):
+
+    allowed_actions = serializers.SerializerMethodField()
+
+    def get_allowed_actions(self, obj):
+        from .access import FormAccess
+        return ['EDIT','SAVE','SUBMIT'] if not hasattr(obj,'business_request') and obj.submitted_by_id==self.context['request'].user.id and obj.status in {'DRAFT','RETURNED'} and FormAccess.can_submit(self.context['request'].user) else []
+
+    def to_representation(self, instance):
+        from .policy import FormSubmissionDisclosurePolicy
+        result=super().to_representation(instance)
+        result['data']=FormSubmissionDisclosurePolicy.data_for(submission=instance,user=self.context['request'].user)
+        return result
 
     template_name = serializers.CharField(
         source="template.name",
@@ -313,6 +269,7 @@ class FormSubmissionSerializer(
         model = FormSubmission
 
         fields = (
+            "allowed_actions",
             "id",
 
             "company",
@@ -397,12 +354,16 @@ class FormSubmissionSerializer(
             )
         )
 
+    @transaction.atomic
     def update(
         self,
         instance,
         validated_data,
     ):
 
+        instance = FormSubmission.objects.select_for_update().get(pk=instance.pk)
+        if hasattr(instance,'business_request'):
+            raise serializers.ValidationError('Edit this form through its business request.')
         if instance.status not in (
             "DRAFT",
             "RETURNED",
@@ -426,11 +387,17 @@ class FormSubmissionSerializer(
             "data",
             instance.data,
         )
+        from .policy import FormSubmissionDisclosurePolicy
+        data = FormSubmissionDisclosurePolicy.restore_masked_answers(
+            submission=instance, user=self.context['request'].user, data=data,
+        )
+        validated_data['data'] = data
 
         FormSubmissionService.validate_data(
             template=instance.template,
             data=data,
             partial=True,
+            schema=instance.schema_snapshot,
         )
 
         # Template cannot be changed after creation.
@@ -444,14 +411,3 @@ class FormSubmissionSerializer(
             validated_data,
         )
 
-        if (
-            instance.lifecycle_status == "PUBLISHED"
-            and instance.submissions.exists()
-            and fields_data is not None
-        ):
-            raise serializers.ValidationError({
-                "fields": (
-                    "Published forms with submissions cannot be changed. "
-                    "Create a new version instead."
-                )
-            })

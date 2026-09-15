@@ -36,3 +36,24 @@ class SupportTicketCreateSerializer(serializers.Serializer):
     description = serializers.CharField()
     requested_priority = serializers.ChoiceField(choices=SupportTicket.PRIORITY_CHOICES, default="NORMAL")
     context = serializers.JSONField(required=False, default=dict)
+
+    def create(self, validated_data):
+        from .services import SupportTicketService
+        request = self.context["request"]
+        return SupportTicketService.create(actor=request.user, request=request, **validated_data)
+
+
+class SupportTicketUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupportTicket
+        fields = ("status", "priority", "assigned_to")
+
+    def validate_assigned_to(self, value):
+        from core.capabilities import Capabilities
+        from core.capability_service import CapabilityService
+        if value and not CapabilityService.has(value, Capabilities.PLATFORM_SUPPORT):
+            raise serializers.ValidationError("Assignee must be a platform support user.")
+        return value
+
+
+SupportTicketSerializer = SupportTicketDetailSerializer

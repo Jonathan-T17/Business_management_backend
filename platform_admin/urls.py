@@ -1,4 +1,5 @@
 from django.urls import path
+from .maintenance import MaintenanceCatalogue, MaintenanceRecords, MaintenanceChoices
 from rest_framework.routers import DefaultRouter
 
 from .views import (
@@ -14,10 +15,14 @@ from .views import (
     PlatformActivityViewSet,
     PlatformHealthView,
     PlatformSettingsView,
+    PlatformPlanViewSet,
 )
 
 
 router = DefaultRouter()
+from support.views import PlatformSupportTicketViewSet
+router.register("support/tickets", PlatformSupportTicketViewSet, basename="platform-support")
+router.register("plans", PlatformPlanViewSet, basename="platform-plans")
 
 
 router.register(
@@ -83,6 +88,10 @@ router.register(
 
 
 urlpatterns = [
+    path("administration/", MaintenanceCatalogue.as_view()),
+    path("administration/<slug:key>/", MaintenanceRecords.as_view()),
+    path("administration/<slug:key>/choices/<str:field>/", MaintenanceChoices.as_view()),
+    path("administration/<slug:key>/<str:pk>/", MaintenanceRecords.as_view()),
     path(
         "dashboard/",
         PlatformDashboardView.as_view(),

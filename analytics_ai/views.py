@@ -5,7 +5,7 @@ from rest_framework.views import APIView, PermissionDenied
 from rest_framework.decorators import action
 
 from companies.models import Branch
-from core.roles import Roles
+from core.capability_service import CapabilityService
 from projects.models import Project
 
 from subscriptions.permissions import HasActiveSubscription
@@ -51,8 +51,7 @@ class CompanyAnalyticsView(APIView):
         user = request.user
 
         if (
-            request.user.role != Roles.SUPERUSER
-            and not SubscriptionService.ai_enabled(
+            not SubscriptionService.ai_enabled(
                 request.user.company
             )
         ):
@@ -63,27 +62,7 @@ class CompanyAnalyticsView(APIView):
         project_id = request.query_params.get("project_id")
         branch_id = request.query_params.get("branch_id")
 
-        if user.role == Roles.SUPERUSER:
-            company_id = request.query_params.get("company_id")
-
-            if company_id:
-                from companies.models import Company
-
-                company = Company.objects.filter(
-                    id=company_id,
-                    is_active=True,
-                ).first()
-
-                if not company:
-                    return Response(
-                        {"detail": "Company not found."},
-                        status=status.HTTP_404_NOT_FOUND,
-                    )
-            else:
-                company = user.company
-
-        else:
-            company = user.company
+        company = user.company
 
         if not company:
             return Response(
@@ -189,8 +168,8 @@ class AnalyticsSnapshotViewSet(
     def get_queryset(self):
         user = self.request.user
 
-        if user.role == Roles.SUPERUSER:
-            return AnalyticsSnapshot.objects.all()
+        if not CapabilityService.is_tenant_identity(user):
+            return AnalyticsSnapshot.objects.none()
 
         return AnalyticsSnapshot.objects.filter(
             company=user.company
@@ -213,8 +192,8 @@ class AIInsightViewSet(
     def get_queryset(self):
         user = self.request.user
 
-        if user.role == Roles.SUPERUSER:
-            return AIInsight.objects.all()
+        if not CapabilityService.is_tenant_identity(user):
+            return AIInsight.objects.none()
 
         return AIInsight.objects.filter(
             company=user.company
@@ -248,8 +227,8 @@ class AIAnalyticsRecordViewSet(
     def get_queryset(self):
         user = self.request.user
 
-        if user.role == Roles.SUPERUSER:
-            return AIAnalyticsRecord.objects.all()
+        if not CapabilityService.is_tenant_identity(user):
+            return AIAnalyticsRecord.objects.none()
 
         return AIAnalyticsRecord.objects.filter(
             company=user.company

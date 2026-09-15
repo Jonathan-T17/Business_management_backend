@@ -14,3 +14,6 @@ class CanManagePlatformSubscriptions(RequiresPlatformCapability): capability = C
 class CanViewPlatformSecurity(RequiresPlatformCapability): capability = Capabilities.VIEW_PLATFORM_SECURITY
 class CanViewPlatformHealth(RequiresPlatformCapability): capability = Capabilities.VIEW_PLATFORM_HEALTH
 class CanUsePlatformSupport(RequiresPlatformCapability): capability = Capabilities.PLATFORM_SUPPORT
+
+class IsPlatformSuperUser(RequiresPlatformCapability):
+    capability = Capabilities.PLATFORM_ADMIN

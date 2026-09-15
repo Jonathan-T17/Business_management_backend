@@ -1,12 +1,20 @@
 from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
-from users.views import ActiveCompanyTokenRefreshView
+from users.views import ActiveCompanyTokenRefreshView, VerifyOTPView
 from users.auth_views import CustomLoginView
 from core.views import DashboardView
+from rest_framework.routers import SimpleRouter
+from organizations.views import DepartmentViewSet, TeamViewSet, EmployeeProfileViewSet
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 API_PREFIX = "api/v1/"
+
+# Compatibility paths used by the organization screens; reuse canonical permissions.
+organization_aliases = SimpleRouter()
+organization_aliases.register("departments", DepartmentViewSet, basename="department-compat")
+organization_aliases.register("teams", TeamViewSet, basename="team-compat")
+organization_aliases.register("employees", EmployeeProfileViewSet, basename="employee-compat")
 
 urlpatterns = [
     # =========================================================
@@ -18,6 +26,7 @@ urlpatterns = [
     # AUTHENTICATION
     # =========================================================
     path(API_PREFIX + "auth/token/", CustomLoginView.as_view(), name="token-obtain"),
+    path(API_PREFIX + "auth/verify-otp/", VerifyOTPView.as_view(), name="auth-verify-otp"),
     path(API_PREFIX + "auth/token/refresh/", ActiveCompanyTokenRefreshView.as_view(), name="token-refresh"),
 
     # =========================================================
@@ -32,6 +41,7 @@ urlpatterns = [
     path(API_PREFIX, include("companies.urls")),
     path(API_PREFIX + "company-setup/", include("company_setup.urls")),
     path(API_PREFIX + "organizations/", include("organizations.urls")),
+    path(API_PREFIX, include(organization_aliases.urls)),
 
     # =========================================================
     # PROJECTS / TASKS / COMMENTS

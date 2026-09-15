@@ -1,3 +1,4 @@
+from .overview import AnalyticsOverviewView
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
@@ -34,6 +35,7 @@ router.register(
 
 
 urlpatterns = [
+    path("overview/", AnalyticsOverviewView.as_view(), name="analytics-overview"),
     path(
         "company/",
         CompanyAnalyticsView.as_view(),

@@ -47,23 +47,7 @@ class SupportTicketViewSet(viewsets.ModelViewSet):
         if not user.company_id:
             raise PermissionDenied("A company account is required to create a support ticket.")
 
-        submitted_context = serializer.validated_data.get("context") or {}
-        allowed_context = {
-            key: submitted_context[key]
-            for key in ("application_version", "page", "module", "object_type", "object_id")
-            if key in submitted_context
-        }
-        ticket = serializer.save(
-            company=user.company,
-            created_by=user,
-            context={
-                **allowed_context,
-                "company_id": str(user.company_id),
-                "user_id": str(user.id),
-                "user_role": user.role,
-                "created_at": timezone.now().isoformat(),
-            },
-        )
+        ticket = serializer.save()
         create_audit_log(user=user, company=user.company, request=self.request, action="CREATE", description=f"Support ticket created: {ticket.reference}.", obj=ticket)
         for platform_user in User.objects.filter(is_active=True).filter(role=Roles.SUPERUSER):
             create_notification(
@@ -85,15 +69,25 @@ class SupportTicketViewSet(viewsets.ModelViewSet):
     def messages(self, request, pk=None):
         ticket = self.get_object()
         if request.method == "GET":
-            return Response(SupportMessageSerializer(ticket.messages.all(), many=True).data)
+            return Response(SupportMessageSerializer(self._visible_messages(ticket), many=True).data)
         return self._create_reply(request, ticket)
+
+    def _visible_messages(self, ticket):
+        messages = ticket.messages.all()
+        if not Authorization.is_platform_superuser(self.request.user):
+            messages = messages.filter(visibility="CUSTOMER")
+        return messages
 
     def _create_reply(self, request, ticket):
         if ticket.status in ("RESOLVED", "CLOSED") and not Authorization.is_platform_superuser(request.user):
             raise PermissionDenied("This ticket is no longer accepting replies.")
-        serializer = SupportMessageSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        message = serializer.save(ticket=ticket, author=request.user)
+        from rest_framework import serializers
+        from .services import SupportTicketService
+        body = serializers.CharField().run_validation(request.data.get("body", ""))
+        message = SupportTicketService.add_message(
+            ticket=ticket, actor=request.user, body=body,
+            internal=request.data.get("visibility") == "INTERNAL", request=request,
+        )
         if Authorization.is_platform_superuser(request.user):
             create_notification(
                 recipient=ticket.created_by,

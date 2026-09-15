@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .models import ActiveSession, TrustedDevice, AuditLog, LoginHistory
 from .serializers import ActiveSessionSerializer, CompanyAuditLogSerializer, TrustedDeviceSerializer, AuditLogSerializer, LoginHistorySerializer
-from security.services import create_audit_log
+from security.services import create_audit_log, terminate_session
 from companies.permissions import IsCompanyAdmin
 from users.permissions import IsSuperUserOrPlatformAdmin
 
@@ -14,14 +14,25 @@ from users.permissions import IsSuperUserOrPlatformAdmin
 class TrustedDeviceViewSet(viewsets.ModelViewSet):
     serializer_class = TrustedDeviceSerializer
     permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        from rest_framework.exceptions import MethodNotAllowed
+        raise MethodNotAllowed("POST", "Devices are trusted through verified login.")
+
+    @action(detail=True, methods=["post"])
+    def revoke(self, request, pk=None):
+        return self.destroy(request, pk=pk)
 
     def get_queryset(self):
-        return TrustedDevice.objects.filter(user=self.request.user)
+        return TrustedDevice.objects.filter(user=self.request.user, is_active=True)
 
     def destroy(self, request, *args, **kwargs):
         device = self.get_object()
         device.is_active = False
-        device.save()
+        device.revoked_at = timezone.now()
+        device.revoked_by = request.user
+        device.save(update_fields=["is_active", "revoked_at", "revoked_by"])
 
         create_audit_log(
             user=request.user,
@@ -34,6 +45,20 @@ class TrustedDeviceViewSet(viewsets.ModelViewSet):
 
 
 # Platform admin viewsets
+class MySessionViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = ActiveSessionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return ActiveSession.objects.filter(user=self.request.user, is_active=True).order_by("-last_activity")
+
+    @action(detail=True, methods=["post"])
+    def revoke(self, request, pk=None):
+        session = self.get_object()
+        terminate_session(session=session, actor=request.user, reason="SECURITY", request=request)
+        return Response({"message": "Session revoked."})
+
+
 class TrustedDeviceAdminViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = TrustedDeviceSerializer
     permission_classes = [IsSuperUserOrPlatformAdmin]

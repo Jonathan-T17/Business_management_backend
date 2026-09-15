@@ -233,7 +233,7 @@ def document_upload_path(
 
     return (
         f"documents/"
-        f"{instance.company_id}/"
+        f"{instance.document.company_id}/"
         f"{safe_name}"
     )
 

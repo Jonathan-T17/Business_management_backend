@@ -12,7 +12,7 @@ from security.viewsets import SecureModelViewSet
 from .models import Comment
 from .serializers import CommentSerializer
 from .permissions import IsCommentParticipant
-from .services import create_comment
+from .services import CommentService
 
 
 class CommentViewSet(SecureModelViewSet):
@@ -77,11 +77,12 @@ class CommentViewSet(SecureModelViewSet):
         task = serializer.validated_data.get("task")
         content = serializer.validated_data["content"]
 
-        comment = create_comment(
+        comment = CommentService.create(
             user=self.request.user,
             project=project,
             task=task,
             content=content,
+            request=self.request,
         )
 
         # SecureModelViewSet audit
@@ -100,6 +101,7 @@ class CommentViewSet(SecureModelViewSet):
 
         # Store the created object so DRF can return it.
         self._created_comment = comment
+        serializer.instance = comment
 
     # ------------------------------------------------------
     # Update

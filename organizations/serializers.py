@@ -93,7 +93,7 @@ class EmployeeDelegationSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeDelegation
 
-        fields = "__all__"
+        fields = ('id', 'from_user_name', 'to_user_name', 'permissions', 'reason', 'starts_at', 'ends_at', 'status', 'created_at', 'company', 'from_user', 'to_user', 'created_by')
 
         read_only_fields = (
             "company",
@@ -133,7 +133,7 @@ class EmployeeReplacementSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeReplacement
 
-        fields = "__all__"
+        fields = ('id', 'outgoing_name', 'incoming_name', 'transfer_open_tasks', 'transfer_project_memberships', 'transfer_team_leadership', 'transfer_department_management', 'transfer_branch_management', 'reason', 'status', 'created_at', 'completed_at', 'company', 'outgoing_employee', 'incoming_employee', 'performed_by')
 
         read_only_fields = (
             "company",
@@ -359,7 +359,7 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeProfile
 
-        fields = "__all__"
+        fields = ('id', 'employee_name', 'email', 'company_name', 'branch_name', 'department_name', 'team_name', 'manager_name', 'position_name', 'employee_id', 'employment_type', 'status', 'hire_date', 'termination_date', 'termination_reason', 'phone', 'office_location', 'emergency_contact', 'notes', 'created_at', 'updated_at', 'user', 'company', 'branch', 'department', 'team', 'manager', 'position', 'terminated_by')
 
         read_only_fields = (
             "company",
@@ -464,7 +464,7 @@ class EmployeeTransferSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeTransfer
 
-        fields = "__all__"
+        fields = ('id', 'employee_name', 'approved_by_name', 'reason', 'effective_date', 'created_at', 'employee', 'old_branch', 'new_branch', 'old_department', 'new_department', 'old_team', 'new_team', 'approved_by')
 
         read_only_fields = (
             "approved_by",
@@ -485,7 +485,7 @@ class EmployeeNoteSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeNote
 
-        fields = "__all__"
+        fields = ('id', 'author_name', 'note', 'created_at', 'employee', 'author')
 
         read_only_fields = (
             "author",
@@ -496,10 +496,10 @@ class EmployeeNoteSerializer(serializers.ModelSerializer):
         request = self.context["request"]
         user = request.user
 
-        if user.role != "SUPERUSER":
-            if employee.company_id != user.company_id:
-                raise serializers.ValidationError(
-                    "Employee does not belong to your company."
-                )
+        from core.capability_service import CapabilityService
+        if not CapabilityService.is_tenant_identity(user) or employee.company_id != user.company_id:
+            raise serializers.ValidationError(
+                "Employee does not belong to your company."
+            )
 
         return employee

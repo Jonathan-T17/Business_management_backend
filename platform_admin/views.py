@@ -1,3 +1,5 @@
+from django.db import transaction
+from django.db.models import Count, Q
 from django.utils import timezone
 from django.conf import settings
 
@@ -29,6 +31,7 @@ from security.models import (
 from security.services import (
     create_audit_log,
     terminate_company_sessions,
+    terminate_session,
     terminate_user_sessions,
 )
 
@@ -46,6 +49,8 @@ from .serializers import (
     PlatformSubscriptionSerializer,
     PlatformActivitySerializer,
     PlatformEmailDeliverySerializer,
+    PlatformPlanSerializer,
+    PlatformPlanChangeSerializer,
 )
 
 from .services import (
@@ -155,7 +160,7 @@ class PlatformCompanyViewSet(
         queryset = (
             Company.objects
             .select_related(
-                "created_by"
+                "created_by", "subscription__plan"
             )
             .prefetch_related(
                 "branches",
@@ -226,7 +231,7 @@ class PlatformCompanyViewSet(
                 "is_active"
             ]
         )
-        terminate_company_sessions(company)
+        terminate_company_sessions(company, actor=request.user, reason="ACCOUNT_STATE", note=reason, request=request)
 
         create_audit_log(
             user=request.user,
@@ -399,17 +404,8 @@ class PlatformUserViewSet(
                     "A reason is required."
             })
 
-        sessions = (
-            ActiveSession.objects.filter(
-                user=target_user,
-                is_active=True,
-            )
-        )
-
-        count = sessions.update(
-            is_active=False,
-            terminated_at=
-                timezone.now(),
+        count = terminate_user_sessions(
+            target_user, actor=request.user, reason="SECURITY", note=reason, request=request,
         )
 
         create_audit_log(
@@ -455,7 +451,7 @@ class PlatformUserViewSet(
         reason = self._require_reason(request)
         target_user.is_active = False
         target_user.save(update_fields=("is_active",))
-        terminate_user_sessions(target_user, reason=reason)
+        terminate_user_sessions(target_user, actor=request.user, reason="ACCOUNT_STATE", note=reason, request=request)
         create_audit_log(
             user=request.user,
             company=target_user.company,
@@ -596,16 +592,8 @@ class PlatformActiveSessionViewSet(
                 }
             )
 
-        session.is_active = False
-        session.terminated_at = (
-            timezone.now()
-        )
-
-        session.save(
-            update_fields=[
-                "is_active",
-                "terminated_at",
-            ]
+        terminate_session(
+            session=session, actor=request.user, reason="SECURITY", note=reason, request=request,
         )
 
         create_audit_log(
@@ -877,116 +865,51 @@ class PlatformAuditLogViewSet(
 # Subscriptions
 # ============================================================
 
-class PlatformSubscriptionViewSet(
-    viewsets.ReadOnlyModelViewSet
-):
+class PlatformPlanViewSet(viewsets.ReadOnlyModelViewSet):
+    pagination_class = None
+    permission_classes = [IsPlatformSuperUser]
+    serializer_class = PlatformPlanSerializer
+    queryset = Plan.objects.filter(is_active=True).order_by("price_monthly", "name")
 
-    serializer_class = (
-        PlatformSubscriptionSerializer
-    )
 
-    permission_classes = [
-        IsPlatformSuperUser,
-    ]
+class PlatformSubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = PlatformSubscriptionSerializer
+    permission_classes = [IsPlatformSuperUser]
+
+    @action(detail=True, methods=["get"], url_path="plan-options")
+    def plan_options(self, request, pk=None):
+        from subscriptions.services import SubscriptionCapacity
+        subscription = self.get_object()
+        return Response([
+            {**PlatformPlanSerializer(plan).data,
+             "issues": SubscriptionCapacity.issues(subscription.company, plan)}
+            for plan in Plan.objects.filter(is_active=True)
+        ])
 
     def get_queryset(self):
-        return (
-            Subscription.objects
-            .select_related(
-                "company",
-                "plan",
-            )
-            .order_by(
-                "-started_at"
-            )
+        queryset = Subscription.objects.select_related("company", "plan").annotate(
+            users_used=Count("company__users", filter=Q(company__users__is_deleted=False), distinct=True),
+            projects_used=Count("company__projects", filter=Q(company__projects__is_active=True), distinct=True),
+        ).order_by("-started_at")
+        search = self.request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(Q(company__name__icontains=search) | Q(plan__name__icontains=search))
+        return queryset
+
+    @action(detail=True, methods=["post"], url_path="change-plan")
+    @transaction.atomic
+    def change_plan(self, request, pk=None):
+        current = self.get_object()
+        subscription = Subscription.objects.select_for_update().get(pk=current.pk)
+        payload = PlatformPlanChangeSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        plan = payload.validated_data["plan_id"]
+        from subscriptions.services import SubscriptionLifecycleService
+        SubscriptionLifecycleService.change_plan(
+            subscription=subscription, new_plan=plan, actor=request.user,
+            reason=payload.validated_data["reason"], request=request,
         )
-
-
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="change-plan",
-    )
-    def change_plan(
-        self,
-        request,
-        pk=None,
-    ):
-
-        subscription = (
-            self.get_object()
-        )
-
-        plan_id = (
-            request.data
-            .get("plan_id")
-        )
-
-        reason = (
-            request.data
-            .get("reason", "")
-            .strip()
-        )
-
-        if not reason:
-            raise ValidationError({
-                "reason":
-                    "A reason is required."
-            })
-
-        if not plan_id:
-            raise ValidationError({
-                "plan_id":
-                    "Plan is required."
-            })
-
-        try:
-            plan = Plan.objects.get(
-                id=plan_id
-            )
-        except Plan.DoesNotExist:
-            raise ValidationError({
-                "plan_id":
-                    "Invalid plan."
-            })
-
-        old_plan = (
-            subscription.plan
-        )
-
-        subscription.plan = plan
-
-        subscription.save(
-            update_fields=[
-                "plan"
-            ]
-        )
-
-        create_audit_log(
-            user=request.user,
-            company=
-                subscription.company,
-            request=request,
-            action="UPDATE",
-            description=(
-                f"Platform administrator "
-                f"changed subscription "
-                f"from {old_plan.name} "
-                f"to {plan.name}. "
-                f"Reason: {reason}"
-            ),
-            obj=subscription,
-        )
-
-        serializer = (
-            self.get_serializer(
-                subscription
-            )
-        )
-
-        return Response(
-            serializer.data
-        )
+        return Response(self.get_serializer(self.get_queryset().get(pk=subscription.pk)).data)
 
 
 # ============================================================

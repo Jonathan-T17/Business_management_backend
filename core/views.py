@@ -18,6 +18,10 @@ class DashboardView(APIView):
 
 	def get(self, request):
 		user = request.user
+		from core.authorization import Authorization
+		from rest_framework.exceptions import PermissionDenied
+		if not Authorization.is_tenant_user(user):
+			raise PermissionDenied("A tenant account is required for this dashboard.")
 		role = user.role
 
 		projects = TenantService.projects(user)
@@ -25,9 +29,7 @@ class DashboardView(APIView):
 		reports = TenantService.reports(user)
 		notifications = TenantService.notifications(user)
 		activity = TenantService.activity(user)
-		company_filter = {}
-		if role != Roles.SUPERUSER:
-			company_filter = {"company_id": user.company_id}
+		company_filter = {"company_id": user.company_id}
 
 		organization_counts = {
 			"employees": User.objects.filter(
@@ -41,7 +43,6 @@ class DashboardView(APIView):
 		}
 
 		dashboard = {
-			Roles.SUPERUSER: "platform",
 			Roles.ADMIN: "company",
 			Roles.MANAGER: "manager",
 			Roles.EMPLOYEE: "employee",

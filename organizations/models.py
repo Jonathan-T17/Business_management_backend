@@ -67,13 +67,6 @@ class Department(models.Model):
             ),
         ]
 
-        constraints = [
-            models.UniqueConstraint(
-                fields=["company", "employee_id"],
-                name="unique_employee_id_per_company",
-            ),
-        ]
-
         indexes = [
             models.Index(
                 fields=["company", "branch", "is_active"],
@@ -394,6 +387,7 @@ class EmployeeProfile(models.Model):
 
     class Meta:
         ordering = ["employee_id"]
+        constraints = [models.UniqueConstraint(fields=["company", "employee_id"], name="unique_employee_id_per_company")]
 
         indexes = [
             models.Index(

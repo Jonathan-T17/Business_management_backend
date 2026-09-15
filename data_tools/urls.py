@@ -3,13 +3,14 @@ from django.urls import path
 from .views import (
     GlobalSearchView,
     BulkTaskStatusView,
-    EmployeeImportView,
+    EmployeeImportView, EmployeeImportStatusView,
     EmployeeImportCommitView,
     RequestCSVExportView,
 )
 
 
 urlpatterns = [
+    path("imports/employees/<uuid:pk>/", EmployeeImportStatusView.as_view()),
     path("search/", GlobalSearchView.as_view(), name="global-search"),
     path("bulk/tasks/status/", BulkTaskStatusView.as_view(), name="bulk-task-status"),
     path("imports/employees/", EmployeeImportView.as_view(), name="employee-import"),

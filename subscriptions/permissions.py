@@ -6,8 +6,8 @@ from core.roles import Roles
 
 class IsSubscriptionAdmin(BasePermission):
     """
-    Only company administrators and the system superuser
-    can manage subscriptions.
+    Company administrators access tenant subscription controls.
+    Platform administration uses separate endpoints.
     """
 
     message = "You do not have permission to manage subscriptions."
@@ -17,10 +17,8 @@ class IsSubscriptionAdmin(BasePermission):
         if not request.user.is_authenticated:
             return False
 
-        if request.user.role == Roles.SUPERUSER:
-            return True
-
-        return request.user.role == Roles.ADMIN
+        return (request.user.role == Roles.ADMIN and not request.user.is_superuser
+                and bool(request.user.company_id))
 
 
 

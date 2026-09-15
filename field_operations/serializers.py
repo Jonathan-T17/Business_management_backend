@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from core.authorization import Authorization
 from .models import FieldActivity, FieldStop, FieldStopMetric
 
 
@@ -9,27 +10,43 @@ class FieldStopMetricSerializer(serializers.ModelSerializer):
 
 
 class FieldStopSerializer(serializers.ModelSerializer):
+    form_options = serializers.SerializerMethodField()
+    allowed_actions = serializers.SerializerMethodField()
+
+    def get_form_options(self,obj):
+        from company_setup.models import FieldActivityTemplate
+        from forms_engine.access import FormAccess
+        user=self.context['request'].user
+        if obj.activity.employee_id!=user.id or obj.status not in {'PENDING','ARRIVED'}: return []
+        return [{'id':configuration.pk,'name':configuration.name} for configuration in FieldActivityTemplate.objects.filter(company=obj.activity.company,activity_type=obj.activity.activity_type,is_active=True,form_template__isnull=False).select_related('form_template') if FormAccess.eligible(user,configuration.form_template)]
+
+    def get_allowed_actions(self,obj):
+        from .services import FieldOperationService
+        user=self.context['request'].user
+        if obj.activity.company_id!=user.company_id or not (FieldOperationService._is_worker(user,obj.activity) or FieldOperationService._can_manage(user)): return []
+        return ['ARRIVE','COMPLETE'] if obj.status=='PENDING' else ['COMPLETE'] if obj.status=='ARRIVED' else []
+
     metrics = FieldStopMetricSerializer(many=True, required=False)
 
     class Meta:
         model = FieldStop
         fields = (
-            "id", "activity", "sequence", "stop_type", "client_name",
+            "form_options", "allowed_actions", "id", "activity", "sequence", "stop_type", "client_name",
             "location_name", "address", "contact_name", "contact_phone",
             "status", "planned_arrival", "arrived_at", "completed_at",
             "latitude", "longitude", "notes", "form_submission", "metrics",
             "created_at",
         )
-        read_only_fields = ("status", "arrived_at", "completed_at", "created_at")
+        read_only_fields = ("form_submission", "status", "arrived_at", "completed_at", "created_at")
 
     def validate(self, attrs):
         request = self.context["request"]
-        activity = attrs.get("activity")
+        activity = attrs.get("activity", getattr(self.instance, "activity", None))
+        if not Authorization.is_tenant_user(request.user):
+            raise serializers.ValidationError("Field operations require a tenant company context.")
 
-        # SUPERUSER bypass
         if (
             activity
-            and request.user.role != "SUPERUSER"
             and activity.company_id != request.user.company_id
         ):
             raise serializers.ValidationError(
@@ -71,7 +88,7 @@ class FieldActivitySerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context["request"]
         company_id = request.user.company_id
-        if company_id is None:
+        if not Authorization.is_tenant_user(request.user):
             raise serializers.ValidationError(
                 "Field operations require a tenant company context."
             )

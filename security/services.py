@@ -9,7 +9,9 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 from core.authorization import Authorization
 from core.capabilities import Capabilities
 from core.capability_service import CapabilityService
-from .models import ActiveSession, AuditLog, FailedLoginAttempt, OTP, SupportAccessSession, TrustedDevice
+from .models import ActiveSession, AuditLog, FailedLoginAttempt, LoginHistory, OTP, SupportAccessSession, TrustedDevice
+from .utils import get_client_ip
+from user_agents import parse
 
 MAX_LOGIN_ATTEMPTS = 5
 ACCOUNT_LOCK_MINUTES = 15
@@ -27,6 +29,32 @@ PROHIBITED_SUPPORT_SCOPES = {
 
 def _hash_principal(email):
     return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()
+
+
+def record_login(request, user, successful=True, session=None, failure_reason=""):
+    if user is None:
+        return None
+    ua = parse(request.META.get("HTTP_USER_AGENT", ""))
+    return LoginHistory.objects.create(
+        user=user, company=user.company, branch=user.branch, session=session,
+        email_hash=_hash_principal(user.email), ip_address=get_client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", "")[:1000],
+        browser=ua.browser.family, operating_system=ua.os.family, device=ua.device.family,
+        successful=successful, failure_reason=failure_reason[:255] if not successful else "",
+    )
+
+
+def create_active_session(request, user, refresh_jti, expires_at=None):
+    ua = parse(request.META.get("HTTP_USER_AGENT", ""))
+    if expires_at is None:
+        token = OutstandingToken.objects.filter(jti=refresh_jti, user=user).first()
+        expires_at = token.expires_at if token else timezone.now() + settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"]
+    return ActiveSession.objects.create(
+        user=user, company=user.company, branch=user.branch,
+        refresh_token_jti=refresh_jti, ip_address=get_client_ip(request),
+        browser=ua.browser.family, operating_system=ua.os.family,
+        device=ua.device.family, expires_at=expires_at,
+    )
 
 
 def create_audit_log(*, user=None, action, request=None, company=None, branch=None, description="", status="SUCCESS", severity="INFO", actor_type=None, obj=None, metadata=None):

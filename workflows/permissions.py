@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission
 
 from core.roles import Roles
+from core.capability_service import CapabilityService
 
 
 class CanManageWorkflows(BasePermission):
@@ -12,7 +13,7 @@ class CanManageWorkflows(BasePermission):
     ):
         user = request.user
 
-        if not user.is_authenticated:
+        if not CapabilityService.is_tenant_identity(user):
             return False
 
         return user.role in (

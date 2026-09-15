@@ -1,4 +1,12 @@
 from user_agents import parse
+from django.conf import settings
+from django.core.mail import send_mail
+from django.db import transaction
+from django.urls import reverse
+from django.utils import timezone
+from smtplib import SMTPException
+from .exceptions import VerificationEmailUnavailable
+from rest_framework.exceptions import AuthenticationFailed
 
 from rest_framework.exceptions import ValidationError
 from rest_framework import serializers
@@ -9,6 +17,7 @@ from .models import User
 from core.roles import Roles
 from core.action_policy import actions_for, capabilities_for
 class UserSerializer(serializers.ModelSerializer):
+    context = serializers.SerializerMethodField()
     capabilities = serializers.SerializerMethodField()
     allowed_actions = serializers.SerializerMethodField()
 
@@ -18,7 +27,9 @@ class UserSerializer(serializers.ModelSerializer):
             "id",
             "email",
             "full_name",
+            "theme_preference",
             "role",
+            "context",
             "company",
             "branch",
             "is_active",
@@ -30,6 +41,10 @@ class UserSerializer(serializers.ModelSerializer):
             "allowed_actions",
         )
         read_only_fields = ("role", "company", "branch", "account_state", "email_verified", "must_change_password")
+
+    def get_context(self, obj):
+        from core.authorization import Authorization
+        return "PLATFORM" if Authorization.is_platform_superuser(obj) else "TENANT"
 
     def get_capabilities(self, obj):
         return capabilities_for(obj)
@@ -45,11 +60,20 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         fields = ("full_name",)
 
 
+class ThemePreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ("theme_preference",)
+        extra_kwargs = {"theme_preference": {"required": True}}
+
+
 
 
 
 
 class UserRegisterSerializer(serializers.ModelSerializer):
+    # Registration services distinguish new users from imported invitation placeholders.
+    email = serializers.EmailField(validators=[])
     # make company_name optional for invite flows
     company_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     invite = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -119,6 +143,7 @@ from security.services import (
     is_account_locked,
     record_login,
     register_failed_attempt,
+    trusted_device_hash,
 )
 from core.authorization import Authorization
 
@@ -148,14 +173,17 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError("Account temporarily locked.")
 
         try:
-            data = super().validate(attrs)
-        except Exception:
+            from django.contrib.auth import authenticate
+            self.user = authenticate(request=request, email=email, password=attrs["password"])
+            if self.user is None:
+                raise AuthenticationFailed("No active account found with the given credentials")
+        except AuthenticationFailed:
             register_failed_attempt(email, ip)
             create_audit_log(
                 action="SECURITY",
                 request=request,
                 status="FAILED",
-                description=f"Failed login for {email}",
+                description="Failed login attempt",
             )
             raise
 
@@ -167,19 +195,33 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         clear_failed_attempts(email, ip)
 
-        # Device fingerprint
-        ua = parse(request.META.get("HTTP_USER_AGENT", ""))
-        fingerprint = f"{ua.browser.family}-{ua.os.family}-{ua.device.family}"
-
+        raw_device_token = request.headers.get("X-SmartBiz-Device-Token") or request.data.get("device_token", "")
         trusted = TrustedDevice.objects.filter(
             user=self.user,
-            fingerprint=fingerprint,
-            is_active=True
-        ).exists()
+            token_hash=trusted_device_hash(str(raw_device_token)),
+            is_active=True, revoked_at__isnull=True
+        ).exists() if raw_device_token else False
 
         if not trusted:
             # Generate OTP and stop here
-            generate_otp(self.user, fingerprint)
+            challenge, code = generate_otp(self.user)
+            try:
+                delivered = send_mail(
+                    "Your login verification code",
+                    f"Your verification code is {code}. It expires in five minutes.",
+                    settings.DEFAULT_FROM_EMAIL, [self.user.email], fail_silently=False,
+                )
+                if delivered != 1:
+                    raise OSError("Verification email was not accepted for delivery.")
+            except (OSError, SMTPException) as error:
+                challenge.invalidated_at = timezone.now()
+                challenge.save(update_fields=["invalidated_at"])
+                create_audit_log(
+                    user=self.user, action="SECURITY", request=request, status="FAILED",
+                    description="Verification email delivery failed.",
+                    metadata={"error_type": type(error).__name__},
+                )
+                raise VerificationEmailUnavailable() from error
             create_audit_log(
                 user=self.user,
                 action="SECURITY",
@@ -187,15 +229,18 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 status="FAILED",
                 description="OTP required for untrusted device",
             )
-            raise serializers.ValidationError({
+            return {
                 "otp_required": True,
                 "message": "OTP required. Check your email.",
                 "email": self.user.email,
-                "verify_url": "/api/verify-otp/",
-            })
+                "challenge_id": str(challenge.challenge_id),
+                "verify_url": reverse("auth-verify-otp"),
+                "expires_in": 300,
+            }
 
         # Normal flow if trusted
-        refresh = RefreshToken(data["refresh"])
+        refresh = RefreshToken.for_user(self.user)
+        data = {"refresh": str(refresh), "access": str(refresh.access_token)}
         session = create_active_session(
             request,
             self.user,
@@ -215,13 +260,28 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class ActiveCompanyTokenRefreshSerializer(TokenRefreshSerializer):
 
+    @transaction.atomic
     def validate(self, attrs):
-        data = super().validate(attrs)
-        user = User.objects.get(pk=self.token["user_id"])
+        from security.models import ActiveSession
+        from django.utils import timezone
+        token = RefreshToken(attrs["refresh"])
+        user = User.objects.filter(pk=token["user_id"]).first()
 
-        if not Authorization.can_authenticate(user):
+        if user is None or not Authorization.can_authenticate(user):
             raise serializers.ValidationError(
                 "Account or company access is inactive."
             )
 
+        session = ActiveSession.objects.select_for_update().filter(
+            user=user, refresh_token_jti=token["jti"], is_active=True,
+        ).first()
+        if session is None or (session.expires_at and session.expires_at <= timezone.now()):
+            raise serializers.ValidationError("Session is no longer active.")
+        data = super().validate(attrs)
+        if "refresh" in data:
+            rotated = RefreshToken(data["refresh"])
+            session.refresh_token_jti = rotated["jti"]
+            from datetime import datetime, timezone as dt_timezone
+            session.expires_at = datetime.fromtimestamp(rotated["exp"], tz=dt_timezone.utc)
+            session.save(update_fields=["refresh_token_jti", "expires_at", "last_activity"])
         return data

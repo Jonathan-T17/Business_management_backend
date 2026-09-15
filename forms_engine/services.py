@@ -30,6 +30,7 @@ class FormSubmissionService:
         ):
 
             fields.append({
+                "classification": field.classification,
                 "key":
                     field.key,
 
@@ -83,6 +84,7 @@ class FormSubmissionService:
         template,
         data,
         partial=False,
+        schema=None,
     ):
 
         if not isinstance(
@@ -106,6 +108,11 @@ class FormSubmissionService:
             )
         )
 
+        if schema is not None:
+            from types import SimpleNamespace
+            definitions=schema.get('fields',[]) if isinstance(schema,dict) else schema
+            fields=[SimpleNamespace(**dict({'required':False,'options':[],'validation_rules':{},'label':f.get('key','')},**f)) for f in definitions]
+
         allowed_keys = {
             field.key
             for field in fields
@@ -128,6 +135,10 @@ class FormSubmissionService:
 
         for field in fields:
 
+            condition=field.validation_rules.get('show_when')
+            if condition and str(data.get(condition['field'],'')).lower()!=str(condition['equals']).lower():
+                data.pop(field.key,None)
+                continue
             value = data.get(
                 field.key
             )
@@ -504,6 +515,9 @@ class FormSubmissionService:
         task=None,
     ):
 
+        from .access import FormAccess
+        if not FormAccess.eligible(user,template):
+            raise ValidationError('This published form is not available to you.')
         if not template.is_active:
             raise ValidationError(
                 "Form template is inactive."
@@ -601,6 +615,12 @@ class FormSubmissionService:
         workflow=None,
     ):
 
+        from .access import FormAccess
+        submission=FormSubmission.objects.select_for_update(of=('self',)).select_related('template__workflow').get(pk=submission.pk)
+        if not FormAccess.can_submit(user) or user.company_id != submission.company_id:
+            raise ValidationError('Form submission permission is required.')
+        if hasattr(submission,'business_request'):
+            raise ValidationError('Submit this form through its business request.')
         if (
             submission.submitted_by_id
             != user.id
@@ -624,54 +644,24 @@ class FormSubmissionService:
             data=
                 submission.data,
             partial=False,
+            schema=submission.schema_snapshot,
         )
 
-        workflow = (
-            workflow
-            or submission.template.workflow
-        )
-
+        if workflow and workflow.pk != submission.template.workflow_id:
+            raise ValidationError('The published template determines the workflow.')
+        workflow=submission.template.workflow
         if not workflow:
-            raise ValidationError(
-                "No workflow has been configured "
-                "for this form."
-            )
+            submission.status='SUBMITTED';submission.submitted_at=timezone.now()
+            submission.save(update_fields=['status','submitted_at','updated_at'])
+            if hasattr(submission,'reporting_obligation'):
+                from reporting_schedules.services import ReportingObligationStateService
+                ReportingObligationStateService.mark_submitted(obligation=submission.reporting_obligation,submitted_at=submission.submitted_at)
+            return submission,None
+        if workflow.company_id!=submission.company_id or workflow.target_type!='FORM_SUBMISSION' or workflow.lifecycle_status!='PUBLISHED':
+            raise ValidationError('No published form approval workflow is available.')
 
-        if (
-            workflow.company_id
-            != submission.company_id
-        ):
-            raise ValidationError(
-                "Workflow belongs to another company."
-            )
-
-        if (
-            workflow.target_type
-            != "FORM_SUBMISSION"
-        ):
-            raise ValidationError(
-                "Invalid workflow type."
-            )
-
-        # Refresh the schema snapshot at submission time.
-        submission.schema_snapshot = (
-            cls.build_schema_snapshot(
-                submission.template
-            )
-        )
-
-        submission.template_version = (
-            submission.template.version
-        )
-
-        submission.save(
-            update_fields=[
-                "schema_snapshot",
-                "template_version",
-            ]
-        )
-
-        instance = WorkflowService.start(
+        from workflows.runtime_service import WorkflowRuntimeService
+        instance = WorkflowRuntimeService.start(
             workflow=workflow,
             target=submission,
             submitted_by=user,
@@ -687,10 +677,10 @@ class FormSubmissionService:
 
         if obligation:
             from reporting_schedules.services import (
-                ReportingObligationService,
+                ReportingObligationStateService,
             )
 
-            ReportingObligationService.mark_submitted(
+            ReportingObligationStateService.mark_submitted(
                 obligation=obligation,
                 submitted_at=
                     timezone.now(),

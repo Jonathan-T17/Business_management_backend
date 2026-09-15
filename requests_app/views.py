@@ -90,6 +90,20 @@ class BusinessRequestViewSet(
         instance.delete()
 
 
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        from .services import BusinessRequestLifecycleService
+        obj = BusinessRequestLifecycleService.finish(request_obj=self.get_object(), actor=request.user,
+            action="CANCEL", reason=request.data.get("reason", ""), request=request)
+        return Response(self.get_serializer(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def close(self, request, pk=None):
+        from .services import BusinessRequestLifecycleService
+        obj = BusinessRequestLifecycleService.finish(request_obj=self.get_object(), actor=request.user,
+            action="CLOSE", request=request)
+        return Response(self.get_serializer(obj).data)
+
     @action(
         detail=True,
         methods=["post"],
@@ -135,7 +149,7 @@ class BusinessRequestViewSet(
         url_path="fulfill",
         permission_classes=[
             IsAuthenticated,
-            CanApproveRequests,
+
         ],
     )
     def fulfill(
@@ -148,11 +162,10 @@ class BusinessRequestViewSet(
             self.get_object()
         )
 
-        BusinessRequestService.mark_fulfilled(
-            business_request=
-                business_request,
-            user=request.user,
-        )
+        from .services import BusinessRequestLifecycleService
+        business_request = BusinessRequestLifecycleService.fulfill(
+            request_obj=business_request, actor=request.user, request=request,
+            note=request.data.get("note", ""))
 
         return Response(
             self.get_serializer(

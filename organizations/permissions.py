@@ -9,8 +9,7 @@ class OrganizationPermission(BasePermission):
     """
     Base permission for organization-management resources.
 
-    SUPERUSER:
-        Platform-wide access.
+    Platform identities cannot access tenant organization resources.
 
     ADMIN:
         Full organization management inside their company.
@@ -30,11 +29,10 @@ class OrganizationPermission(BasePermission):
     def has_permission(self, request, view):
         user = request.user
 
-        if not user or not user.is_authenticated:
+        if not CapabilityService.is_tenant_identity(user):
             return False
 
         return user.role in (
-            Roles.SUPERUSER,
             Roles.ADMIN,
             Roles.MANAGER,
             Roles.EMPLOYEE,
@@ -43,16 +41,15 @@ class OrganizationPermission(BasePermission):
 
 class IsOrganizationAdmin(BasePermission):
     """
-    Company administrator or platform superuser.
+    Company administrator within a tenant.
     """
 
     def has_permission(self, request, view):
         user = request.user
 
         return (
-            user.is_authenticated
+            CapabilityService.is_tenant_identity(user)
             and user.role in (
-                Roles.SUPERUSER,
                 Roles.ADMIN,
             )
         )
@@ -67,9 +64,8 @@ class IsOrganizationManager(BasePermission):
         user = request.user
 
         return (
-            user.is_authenticated
+            CapabilityService.is_tenant_identity(user)
             and user.role in (
-                Roles.SUPERUSER,
                 Roles.ADMIN,
                 Roles.MANAGER,
             )
@@ -86,9 +82,8 @@ class CanViewOrganization(BasePermission):
         user = request.user
 
         return (
-            user.is_authenticated
+            CapabilityService.is_tenant_identity(user)
             and user.role in (
-                Roles.SUPERUSER,
                 Roles.ADMIN,
                 Roles.MANAGER,
                 Roles.EMPLOYEE,
@@ -104,11 +99,8 @@ class IsSameCompanyObject(BasePermission):
     def has_object_permission(self, request, view, obj):
         user = request.user
 
-        if not user.is_authenticated:
+        if not CapabilityService.is_tenant_identity(user):
             return False
-
-        if user.role == Roles.SUPERUSER:
-            return True
 
         obj_company = getattr(obj, "company", None)
 
@@ -121,9 +113,6 @@ class IsSameCompanyObject(BasePermission):
 class IsSameBranchObject(BasePermission):
     """
     Branch-level object restriction.
-
-    SUPERUSER:
-        Full access.
 
     ADMIN:
         Entire company.
@@ -138,11 +127,8 @@ class IsSameBranchObject(BasePermission):
     def has_object_permission(self, request, view, obj):
         user = request.user
 
-        if not user.is_authenticated:
+        if not CapabilityService.is_tenant_identity(user):
             return False
-
-        if user.role == Roles.SUPERUSER:
-            return True
 
         obj_company = getattr(obj, "company", None)
 
@@ -167,7 +153,7 @@ class CanViewCompensation(BasePermission):
 
     def has_permission(self, request, view):
         return (
-            request.user.is_authenticated
+            CapabilityService.is_tenant_identity(request.user)
             and CapabilityService.has(
                 request.user,
                 Capabilities.VIEW_COMPENSATION,
@@ -179,7 +165,7 @@ class CanManageCompensation(BasePermission):
 
     def has_permission(self, request, view):
         return (
-            request.user.is_authenticated
+            CapabilityService.is_tenant_identity(request.user)
             and CapabilityService.has(
                 request.user,
                 Capabilities.MANAGE_COMPENSATION,
@@ -191,36 +177,22 @@ class CanManageEmployees(BasePermission):
     """
     Controls employee-management operations.
 
-    SUPERUSER:
-        Platform-wide employee management.
-
-    ADMIN:
-        Company-wide employee management.
-
-    MANAGER:
-        Employee management within their branch.
-
-    EMPLOYEE:
-        Cannot manage employees.
+    Requires MANAGE_EMPLOYEES. Existing company and branch object
+    restrictions still apply; a role alone does not grant this authority.
     """
 
     def has_permission(self, request, view):
         user = request.user
 
-        if not user.is_authenticated:
+        if not CapabilityService.is_tenant_identity(user):
             return False
 
-        return user.role in (
-            Roles.SUPERUSER,
-            Roles.ADMIN,
-            Roles.MANAGER,
-        )
+        return CapabilityService.has(user, Capabilities.MANAGE_EMPLOYEES)
 
     def has_object_permission(self, request, view, obj):
         user = request.user
-
-        if user.role == Roles.SUPERUSER:
-            return True
+        if not self.has_permission(request, view):
+            return False
 
         obj_company = getattr(obj, "company", None)
 
@@ -234,3 +206,9 @@ class CanManageEmployees(BasePermission):
             return getattr(obj, "branch", None) == user.branch
 
         return False
+
+class CanManageOrganization(BasePermission):
+    def has_permission(self, request, view):
+        return CapabilityService.is_tenant_identity(request.user) and CapabilityService.has(
+            request.user, Capabilities.MANAGE_ORGANIZATION,
+        )
