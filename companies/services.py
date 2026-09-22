@@ -19,7 +19,7 @@ class CompanyInviteService:
 
     @classmethod
     @transaction.atomic
-    def create_invite(cls, *, company, email, role, created_by, request=None, days_valid=None):
+    def create_invite(cls, *, company, email, role, created_by, request=None, days_valid=None, position=None):
         if created_by.company_id != company.id or created_by.role == Roles.SUPERUSER:
             raise PermissionDenied("Tenant invitations require a company administrator context.")
         if not CapabilityService.has(created_by, Capabilities.MANAGE_EMPLOYEES):
@@ -33,6 +33,11 @@ class CompanyInviteService:
         if not SubscriptionService.can_add_user(company):
             raise ValidationError("Your subscription user limit has been reached.")
 
+        if position:
+            if position.company_id != company.pk or not position.is_active:
+                raise ValidationError("Choose an active position in your company.")
+            from company_setup.capability_policy import SetupCapabilityPolicy
+            SetupCapabilityPolicy.validate_preset(actor=created_by, capabilities=list(position.capability_grants.filter(is_active=True).values_list("capability",flat=True)))
         email = email.lower().strip()
         from users.models import User
         existing_user = User.objects.filter(email__iexact=email).first()
@@ -51,7 +56,7 @@ class CompanyInviteService:
         duration = days_valid if isinstance(days_valid, int) and 1 <= days_valid <= 7 else cls.DEFAULT_EXPIRATION_DAYS
         try:
             invite = CompanyInvite.objects.create(
-                company=company, email=email, role=role, created_by=created_by,
+                company=company, email=email, role=role, created_by=created_by, position=position,
                 expires_at=timezone.now() + timedelta(days=duration),
             )
         except IntegrityError:
@@ -89,10 +94,26 @@ class CompanyInviteService:
         if SubscriptionCapacity.usage(invite.company)["users"] > subscription.plan.max_users:
             raise ValidationError("The subscription user limit has been reached.")
 
+        position = invite.position
+        if position and (position.company_id != invite.company_id or not position.is_active):
+            raise ValidationError("The invitation position is no longer available. Ask your administrator to send a new invitation.")
         user.company = invite.company
         user.role = invite.role
         user.is_staff = False
         user.save(update_fields=["company", "role", "is_staff"])
+        from organizations.models import EmployeeProfile
+        if position:
+            user.branch = position.branch
+            user.save(update_fields=["branch"])
+            EmployeeProfile.objects.update_or_create(user=user, defaults={
+                "company":invite.company, "employee_id":f"INV-{invite.pk}",
+                "position":position,"branch":position.branch,"department":position.department,
+                "team":position.team,
+            })
+        else:
+            EmployeeProfile.objects.get_or_create(user=user, defaults={
+                "company":invite.company, "employee_id":f"INV-{invite.pk}",
+            })
         invite.status = "ACCEPTED"
         invite.accepted_at = timezone.now()
         invite.save(update_fields=["status", "accepted_at"])

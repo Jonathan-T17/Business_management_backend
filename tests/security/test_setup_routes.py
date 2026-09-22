@@ -25,7 +25,8 @@ def test_company_health_permission_and_response(django_user_model, settings):
         check["code"] for check in response.data["checks"] if not check["passed"]
     }
     valid_destinations = {"/settings/company-profile", "/branches", "/departments",
-                          "/employees/positions", "/employees", "/settings/roles-permissions"}
+                          "/employees/positions", "/employees", "/settings/roles-permissions", "/settings/forms"}
+    valid_destinations.update("/settings/onboarding?step="+step for step in ("organization","departments","positions","permissions","employees"))
     assert all(issue["url"] in valid_destinations for issue in response.data["issues"])
     for path in ("departments", "teams", "employees"):
         assert client.get(f"/api/v1/{path}/").status_code == 200

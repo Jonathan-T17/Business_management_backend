@@ -126,7 +126,7 @@ class TenantService:
 
     @staticmethod
     def analytics_snapshots(user):
-        if not TenantService._tenant(user) or not CapabilityService.has(
+        if not TenantService._tenant(user) or not CapabilityService.has_company(
             user, Capabilities.VIEW_COMPANY_ANALYTICS
         ):
             return AnalyticsSnapshot.objects.none()
@@ -134,7 +134,7 @@ class TenantService:
 
     @staticmethod
     def ai_insights(user):
-        if not TenantService._tenant(user) or not CapabilityService.has(
+        if not TenantService._tenant(user) or not CapabilityService.has_company(
             user, Capabilities.VIEW_COMPANY_ANALYTICS
         ):
             return AIInsight.objects.none()

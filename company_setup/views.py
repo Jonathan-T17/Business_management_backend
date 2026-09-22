@@ -1,3 +1,5 @@
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -8,7 +10,21 @@ from .permissions import IsCompanySetupAdmin
 from .readiness import SetupReadinessService
 from .services import SetupStateService
 from .allowed_actions import SetupAllowedActions
-from .setup_contract import SETUP_STEPS, REQUIRED_STEPS
+from .setup_contract import SETUP_STEPS, REQUIRED_STEPS, SETUP_VERSION
+
+class SetupAccessView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses=inline_serializer(name="SetupAccess", fields={
+        "setup_required": serializers.BooleanField(),
+        "awaiting_position": serializers.BooleanField(),
+        "company_name": serializers.CharField(),
+    }))
+    def get(self, request):
+        from companies.invitation_access import awaiting_position
+        from .access import setup_required
+        return Response({"awaiting_position": awaiting_position(request.user), "setup_required": setup_required(request.user),
+                         "company_name": request.user.company.name if request.user.company_id else ""})
 
 class SetupStatusView(APIView):
     permission_classes = [IsAuthenticated, IsCompanySetupAdmin]
@@ -16,7 +32,12 @@ class SetupStatusView(APIView):
     def get(self, request):
         state, _ = CompanySetupState.objects.get_or_create(company=request.user.company)
         readiness = SetupReadinessService.evaluate(request.user.company)
-        completed, skipped = set(state.completed_steps), set(state.skipped_steps)
+        completed = (set(state.completed_steps) - REQUIRED_STEPS) | SetupReadinessService.completed_steps(request.user.company)
+        is_complete = state.onboarding_completed and state.setup_version == SETUP_VERSION
+        if is_complete:
+            completed.add("finish")
+        skipped = set(state.skipped_steps) - REQUIRED_STEPS
+        current_step = next((code for code, _ in SETUP_STEPS if code in REQUIRED_STEPS and code not in completed), "")
         steps = [
             {
                 "code": code,
@@ -25,17 +46,17 @@ class SetupStatusView(APIView):
                 "status": (
                     "COMPLETED" if code in completed else
                     "SKIPPED" if code in skipped else
-                    "IN_PROGRESS" if code == state.current_step else
+                    "IN_PROGRESS" if code == current_step else
                     "NOT_STARTED"
                 ),
             }
             for code, name in SETUP_STEPS
         ]
         return Response({
-            "completed": state.onboarding_completed,
-            "progress": round(len(completed | skipped) / len(SETUP_STEPS) * 100),
-            "onboarding_completed": state.onboarding_completed,
-            "current_step": state.current_step,
+            "completed": is_complete,
+            "progress": round(len(completed & REQUIRED_STEPS) / len(REQUIRED_STEPS) * 100),
+            "onboarding_completed": is_complete,
+            "current_step": current_step,
             "selected_template": state.selected_template,
             "steps": steps,
             "readiness": readiness,
@@ -92,7 +113,9 @@ class SetupFinishView(APIView):
 # from rest_framework import status, viewsets
 # from rest_framework.decorators import action
 # from rest_framework.exceptions import ValidationError
-# from rest_framework.permissions import IsAuthenticated
+# from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers
+from rest_framework.permissions import IsAuthenticated
 # from rest_framework.response import Response
 # from rest_framework.views import APIView
 
@@ -137,7 +160,7 @@ class SetupFinishView(APIView):
 #         completed, skipped = set(state.completed_steps), set(state.skipped_steps)
 #         steps = [{"code": code, "name": name, "status": "COMPLETED" if code in completed else "SKIPPED" if code in skipped else "IN_PROGRESS" if code == state.current_step else "NOT_STARTED"} for code, name in SETUP_STEPS]
 #         progress = round((len(completed | skipped) / len(SETUP_STEPS)) * 100)
-#         return Response({"completed": state.onboarding_completed, "progress": progress, "current_step": state.current_step, "steps": steps})
+#         return Response({"completed": is_complete, "progress": progress, "current_step": state.current_step, "steps": steps})
 
 
 # class SetupOnboardingView(SetupBaseView):

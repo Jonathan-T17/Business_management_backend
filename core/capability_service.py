@@ -29,8 +29,12 @@ class CapabilityService:
         )
 
     @classmethod
-    def _tenant_capabilities(cls, user):
+    def _tenant_capabilities(cls, user, *, company_only=False):
         if not cls.is_tenant_identity(user):
+            return set()
+
+        from companies.invitation_access import awaiting_position
+        if awaiting_position(user):
             return set()
 
         result = set()
@@ -51,13 +55,16 @@ class CapabilityService:
             )
 
         profile = getattr(user, "employee_profile", None)
-        if profile and getattr(profile, "position_id", None):
+        if profile and profile.status == "ACTIVE" and getattr(profile, "position_id", None) and profile.position.is_active and profile.position.company_id == user.company_id:
             result.update(
                 profile.position.capability_grants.filter(
                     company_id=user.company_id,
                     is_active=True,
                 ).values_list("capability", flat=True)
             )
+
+        from core.position_scope import PositionScope
+        result.update(PositionScope.capabilities(user, company_only=company_only))
 
         # Defense in depth against manipulated DB/API grants.
         return {
@@ -79,6 +86,10 @@ class CapabilityService:
             return False
 
         return capability in cls._tenant_capabilities(user)
+
+    @classmethod
+    def has_company(cls, user, capability):
+        return cls.is_tenant_identity(user) and capability in cls._tenant_capabilities(user, company_only=True)
 
     @classmethod
     def all_for(cls, user):

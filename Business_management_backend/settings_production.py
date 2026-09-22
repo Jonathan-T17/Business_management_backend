@@ -19,7 +19,8 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
-REFERRER_POLICY = "strict-origin-when-cross-origin"
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+FRONTEND_URL = config("FRONTEND_URL").rstrip("/")
 
 DATABASES["default"]["CONN_MAX_AGE"] = 60
 DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
@@ -40,6 +41,14 @@ CELERY_TASK_REJECT_ON_WORKER_LOST = True
 CELERY_TASK_TIME_LIMIT = 900
 CELERY_TASK_SOFT_TIME_LIMIT = 840
 CELERY_BEAT_SCHEDULER = "celery.beat:PersistentScheduler"
+CELERY_TIMEZONE = "UTC"
+CELERY_BEAT_SCHEDULE = {
+    "reporting-maintenance": {
+        "task": "reporting_schedules.tasks.process_reporting",
+        "schedule": 60.0,
+        "options": {"expires": 60},
+    },
+}
 
 STORAGES = {
     "default": {"BACKEND": "storages.backends.s3.S3Storage"},

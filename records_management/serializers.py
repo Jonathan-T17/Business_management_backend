@@ -17,7 +17,7 @@ class RecordExportSerializer(serializers.ModelSerializer):
 class OfficialRecordSerializer(serializers.ModelSerializer):
     allowed_actions = serializers.SerializerMethodField()
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         from core.capabilities import Capabilities
         from core.capability_service import CapabilityService
         request = self.context.get("request")

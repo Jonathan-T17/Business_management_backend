@@ -6,3 +6,4 @@ class CoreConfig(AppConfig):
 
     def ready(self):
         from . import schema  # noqa: F401
+        from . import schema_contracts  # noqa: F401

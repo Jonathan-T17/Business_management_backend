@@ -81,10 +81,27 @@ application health checks. Infrastructure startup order alone is not a readiness
 
 ## Verification limits
 
-The repaired backend passed 63 tests, Django system checks, and migration
-consistency checks at the latest verification. API schema generation still reports
-missing annotations and other warnings/errors; review those before relying on a
-complete generated client. Docker was unavailable during that verification, so a
+### Reporting worker schedule
+
+Production Beat queues `reporting_schedules.tasks.process_reporting` every minute.
+The task generates obligations for each company's local date, marks overdue drafts
+and pending obligations missed, then creates in-app reminders. Morning reminders
+start at 08:00 company-local time; final reminders occur within one hour of the
+deadline. The reminders do not send email. Generation uses unique obligations;
+reminder flags and notifications commit together under row locks to tolerate retries.
+Failed tasks are visible in worker logs; the next periodic run retries outstanding work.
+This does not backfill dates missed during a multi-day outage.
+
+Run a single Beat instance and monitor worker failures and queue age. Verify all
+three management commands against staging data before enabling the scheduler.
+Production startup now requires FRONTEND_URL; set it to the public frontend origin.
+
+The backend passed 147 tests on 2026-09-19, including strict API schema generation
+and real-response checks for login, OTP, dashboard and onboarding. Generate the
+schema with `python manage.py spectacular --file openapi-v1.yaml --validate --fail-on-warn`;
+`scripts/verify_backend.py` uses the same strict check. The schema no longer emits
+generation warnings or errors. Other response paths still benefit from additional
+runtime contract coverage. Docker was unavailable during local verification, so a
 full image build and container smoke test still need to run in a Docker environment.
 
 ## Rollback

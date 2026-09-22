@@ -1217,6 +1217,12 @@ class CapabilityGrantService:
                 "This capability is reserved for platform administration."
             )
 
+        from core.position_scope import BRANCH_CAPABILITIES
+        if position.assignments.filter(scope="BRANCHES",is_active=True).exists() and capability not in BRANCH_CAPABILITIES:
+            raise ValidationError("This position has selected-location assignments. Use a separate position for company-wide permissions.")
+        from company_setup.capability_policy import SetupCapabilityPolicy
+        SetupCapabilityPolicy.validate_preset(actor=actor, capabilities=[capability])
+
         grant, _ = PositionCapabilityGrant.objects.get_or_create(
             company=company,
             position=position,

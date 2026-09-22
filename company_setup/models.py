@@ -7,6 +7,7 @@ class CompanySetupState(models.Model):
         on_delete=models.CASCADE,
         related_name="setup_state",
     )
+    setup_version = models.PositiveSmallIntegerField(default=1)
     current_step = models.CharField(max_length=50, blank=True)
     skipped_steps = models.JSONField(default=list, blank=True)
     completed_steps = models.JSONField(default=list, blank=True)

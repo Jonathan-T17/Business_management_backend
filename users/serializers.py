@@ -42,14 +42,14 @@ class UserSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("role", "company", "branch", "account_state", "email_verified", "must_change_password")
 
-    def get_context(self, obj):
+    def get_context(self, obj) -> str:
         from core.authorization import Authorization
         return "PLATFORM" if Authorization.is_platform_superuser(obj) else "TENANT"
 
-    def get_capabilities(self, obj):
+    def get_capabilities(self, obj) -> list[str]:
         return capabilities_for(obj)
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         request = self.context.get("request")
         return actions_for(request.user if request else obj, target=obj)
 

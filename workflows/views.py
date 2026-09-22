@@ -145,9 +145,12 @@ class WorkflowInstanceViewSet(
                 )
             )
 
+        from core.position_scope import PositionScope
+        from workflows.models import WorkflowStepRecipient
+        current = PositionScope.current_recipients(WorkflowStepRecipient.objects.filter(
+            step__workflow_instance__company=user.company,user_id__in=recipient_ids))
         return queryset.filter(
-            Q(submitted_by=user)
-            | Q(steps__recipients__user_id__in=recipient_ids)
+            Q(submitted_by=user) | Q(steps__recipients__id__in=current.values("pk"))
         ).distinct()
 
     @action(

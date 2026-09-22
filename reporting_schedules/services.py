@@ -1,4 +1,4 @@
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
@@ -117,6 +117,10 @@ class ReportingScheduleService:
             "TEAM": {"employee_profile__team_id": schedule.target_team_id},
             "POSITION": {"employee_profile__position_id": schedule.target_position_id},
         }
+        if schedule.target_type == "POSITION" and schedule.target_position_id:
+            from core.position_scope import PositionScope
+            return PositionScope.position_users(company=schedule.company,position=schedule.target_position,
+                branch_id=schedule.template.branch_id)
         selected = filters.get(schedule.target_type)
         if not selected or not all(selected.values()):
             return users.none()
@@ -184,5 +188,47 @@ class ReportingObligationStateService:
                 continue
             obligation.status = "MISSED"
             obligation.save(update_fields=["status"])
+            count += 1
+        return count
+
+
+class ReportingReminderService:
+    @classmethod
+    @transaction.atomic
+    def send_pending(cls, *, now=None):
+        from reporting_schedules.models import ReportingObligation
+        from notifications.services import create_notification
+
+        now = now or timezone.now()
+        pending = ReportingObligation.objects.select_for_update(of=("self",)).filter(
+            status__in=["PENDING", "DRAFT"], due_at__gt=now,
+            company__is_active=True, user__is_active=True, user__is_deleted=False,
+            schedule__is_active=True,
+        ).select_related("company", "user", "schedule")
+        count = 0
+        for obligation in pending:
+            if obligation.user.company_id != obligation.company_id:
+                continue
+            if obligation.submission_id and obligation.submission.status in {"SUBMITTED", "UNDER_REVIEW", "APPROVED"}:
+                continue
+            local_now = now.astimezone(ReportingScheduleService.company_zone(obligation.company))
+            final_due = obligation.due_at - now <= timedelta(hours=1)
+            morning_due = local_now.date() == obligation.reporting_date and local_now.hour >= 8
+            field = None
+            if final_due and not obligation.final_reminder_sent:
+                field = "final_reminder_sent"
+            elif morning_due and not final_due and not obligation.morning_reminder_sent:
+                field = "morning_reminder_sent"
+            if field is None:
+                continue
+            # Notification and flag commit together; retries cannot duplicate delivery.
+            create_notification(
+                recipient=obligation.user, company=obligation.company,
+                title="Reporting reminder",
+                message="A reporting obligation is due within one hour." if final_due else "You have a reporting obligation due today.",
+                url="/reporting/obligations", reference_id=obligation.pk,
+            )
+            setattr(obligation, field, True)
+            obligation.save(update_fields=[field])
             count += 1
         return count

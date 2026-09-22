@@ -34,7 +34,7 @@ class ActivityLogSerializer(serializers.ModelSerializer):
 
         read_only_fields = fields
 
-    def get_user_name(self, obj):
+    def get_user_name(self, obj) -> str | None:
         if not obj.user:
             return None
 

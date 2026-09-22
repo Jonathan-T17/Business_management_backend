@@ -6,7 +6,7 @@ COMMANDS = [
     [sys.executable, 'manage.py', 'makemigrations', '--check', '--dry-run'],
     [sys.executable, 'manage.py', 'migrate', '--plan'],
     [sys.executable, '-m', 'pytest', '-q'],
-    [sys.executable, 'manage.py', 'spectacular', '--file', 'openapi-v1.yaml', '--validate'],
+    [sys.executable, 'manage.py', 'spectacular', '--file', 'openapi-v1.yaml', '--validate', '--fail-on-warn'],
 ]
 
 def main():

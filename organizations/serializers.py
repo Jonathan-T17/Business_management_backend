@@ -303,6 +303,7 @@ class PositionSerializer(serializers.ModelSerializer):
             "id",
             "company",
             "title",
+            "branch", "department", "team", "reports_to",
             "description",
             "salary_grade",
             "is_management",
@@ -312,6 +313,27 @@ class PositionSerializer(serializers.ModelSerializer):
         read_only_fields = (
             "company",
         )
+
+
+    def validate(self, attrs):
+        company = self.context["request"].user.company
+        values = {key: attrs.get(key, getattr(self.instance, key, None))
+                  for key in ("branch", "department", "team", "reports_to")}
+        for key, obj in values.items():
+            if obj and (obj.company_id != company.pk or not obj.is_active):
+                raise serializers.ValidationError({key: "Choose an active item in your company."})
+        branch, department, team = (values[k] for k in ("branch", "department", "team"))
+        if department and department.branch_id not in (None, getattr(branch, "pk", None)):
+            raise serializers.ValidationError({"department": "This department belongs to another location."})
+        if team and (team.department_id != getattr(department, "pk", None) or team.branch_id != getattr(branch, "pk", None)):
+            raise serializers.ValidationError({"team": "Choose a team within this department and location."})
+        parent, seen = values["reports_to"], set()
+        while parent:
+            if parent.pk in seen or (self.instance and parent.pk == self.instance.pk):
+                raise serializers.ValidationError({"reports_to": "Reporting relationships cannot form a loop."})
+            seen.add(parent.pk)
+            parent = parent.reports_to
+        return attrs
 
 
 class EmployeeProfileSerializer(serializers.ModelSerializer):

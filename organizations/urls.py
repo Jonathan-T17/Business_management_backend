@@ -93,4 +93,6 @@ urlpatterns = [
     ),
 ]
 
+from .assignments import PositionAssignmentViewSet
+router.register("position-assignments", PositionAssignmentViewSet, basename="position-assignment")
 urlpatterns += router.urls

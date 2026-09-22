@@ -228,6 +228,11 @@ class Position(models.Model):
         related_name="positions",
     )
 
+    branch = models.ForeignKey("companies.Branch", null=True, blank=True, on_delete=models.PROTECT, related_name="positions")
+    department = models.ForeignKey("organizations.Department", null=True, blank=True, on_delete=models.PROTECT, related_name="positions")
+    team = models.ForeignKey("organizations.Team", null=True, blank=True, on_delete=models.PROTECT, related_name="positions")
+    reports_to = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="reporting_positions")
+
     title = models.CharField(max_length=200)
 
     description = models.TextField(blank=True)
@@ -417,7 +422,7 @@ class EmployeeProfile(models.Model):
                     "Employee department must belong to the same company."
                 )
 
-            if self.department.branch_id != self.branch_id:
+            if self.department.branch_id not in (None, self.branch_id):
                 raise ValidationError(
                     "Employee department must belong to the same organizational level."
                 )
@@ -947,3 +952,18 @@ class EmployeeNote(models.Model):
 
     def __str__(self):
         return f"Note - {self.employee.employee_id}"
+
+
+class EmployeePositionAssignment(models.Model):
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE)
+    employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name="position_assignments")
+    position = models.ForeignKey(Position, on_delete=models.PROTECT, related_name="assignments")
+    scope = models.CharField(max_length=20, choices=[("COMPANY", "Company-wide"), ("BRANCHES", "Selected locations")])
+    branches = models.ManyToManyField("companies.Branch", blank=True, related_name="position_assignments")
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["employee", "position"], name="unique_employee_additional_position")]

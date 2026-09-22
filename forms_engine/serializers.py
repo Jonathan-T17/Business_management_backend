@@ -56,7 +56,7 @@ class FormTemplateSerializer(
 
     allowed_actions = serializers.SerializerMethodField()
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         from .access import FormAccess
         from core.capabilities import Capabilities as C
         user=self.context['request'].user
@@ -225,7 +225,7 @@ class FormSubmissionSerializer(
 
     allowed_actions = serializers.SerializerMethodField()
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         from .access import FormAccess
         return ['EDIT','SAVE','SUBMIT'] if not hasattr(obj,'business_request') and obj.submitted_by_id==self.context['request'].user.id and obj.status in {'DRAFT','RETURNED'} and FormAccess.can_submit(self.context['request'].user) else []
 

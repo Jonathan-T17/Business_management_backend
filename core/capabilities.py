@@ -179,6 +179,7 @@ class Capabilities:
             VIEW_MANAGEMENT_PLANS,
         ),
         "COMPANY_ADMINISTRATOR": (
+            VIEW_COMPANY_ANALYTICS,
             MANAGE_COMPANY_SETUP,
             MANAGE_ORGANIZATION,
             MANAGE_EMPLOYEES,

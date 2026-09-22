@@ -41,7 +41,7 @@ class NotificationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_is_security(self, obj):
+    def get_is_security(self, obj) -> bool:
         """Return True if this notification is a critical security event."""
         return obj.notification_type == "SECURITY"
     

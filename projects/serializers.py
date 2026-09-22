@@ -103,7 +103,7 @@ class ProjectSerializer(serializers.ModelSerializer):
                 "branches"
             ].queryset = Branch.objects.none()
 
-    def get_project_scope(self, obj):
+    def get_project_scope(self, obj) -> str:
 
         if not obj.branches.exists():
             return "COMPANY_WIDE"

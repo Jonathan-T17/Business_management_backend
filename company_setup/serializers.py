@@ -15,7 +15,7 @@ class CompanySetupStateSerializer(serializers.ModelSerializer):
             "current_step", "skipped_steps", "completed_steps",
             "selected_template", "onboarding_completed", "updated_at",
         )
-        read_only_fields = ("onboarding_completed", "updated_at")
+        read_only_fields = ("onboarding_completed", "updated_at", "completed_steps", "skipped_steps")
 
 
 class BusinessSetupTemplateSerializer(serializers.ModelSerializer):

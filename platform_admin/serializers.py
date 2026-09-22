@@ -11,7 +11,7 @@ class PlatformCompanySummarySerializer(serializers.ModelSerializer):
     subscription_active = serializers.BooleanField(source="subscription.is_valid", read_only=True, default=False)
     allowed_actions = serializers.SerializerMethodField()
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         from .permissions import IsPlatformSuperUser
         request = self.context.get("request")
         if not request or not IsPlatformSuperUser().has_permission(request, None):
@@ -35,7 +35,7 @@ class PlatformUserSummarySerializer(serializers.ModelSerializer):
 class PlatformSessionSerializer(serializers.ModelSerializer):
     allowed_actions = serializers.SerializerMethodField()
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         from .permissions import IsPlatformSuperUser
         request = self.context.get("request")
         return ["TERMINATE"] if request and obj.is_active and IsPlatformSuperUser().has_permission(request, None) else []
@@ -220,7 +220,7 @@ class PlatformEmailDeliverySerializer(serializers.ModelSerializer):
 #         except Subscription.DoesNotExist:
 #             return False
 
-#     def get_allowed_actions(self, obj):
+#     def get_allowed_actions(self, obj) -> list[str]:
 #         request = self.context.get("request")
 #         return actions_for(request.user, target=obj) if request else []
 
@@ -272,7 +272,7 @@ class PlatformEmailDeliverySerializer(serializers.ModelSerializer):
 
 #         read_only_fields = fields
 
-#     def get_allowed_actions(self, obj):
+#     def get_allowed_actions(self, obj) -> list[str]:
 #         request = self.context.get("request")
 #         return actions_for(request.user if request else obj, target=obj)
 
@@ -586,6 +586,6 @@ class PlatformEmailDeliverySerializer(serializers.ModelSerializer):
 
 #         read_only_fields = fields
 
-#     def get_allowed_actions(self, obj):
+#     def get_allowed_actions(self, obj) -> list[str]:
 #         request = self.context.get("request")
 #         return actions_for(request.user, target=obj) if request else []

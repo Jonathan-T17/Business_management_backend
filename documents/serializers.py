@@ -77,7 +77,7 @@ class AttachmentSerializer(
     def get_file_url(
         self,
         obj,
-    ):
+    ) -> str | None:
         request = self.context.get(
             "request"
         )
@@ -261,7 +261,7 @@ class DocumentVersionSerializer(
     def get_file_url(
         self,
         obj,
-    ):
+    ) -> str | None:
         request = self.context.get(
             "request"
         )

@@ -20,7 +20,7 @@ class FieldStopSerializer(serializers.ModelSerializer):
         if obj.activity.employee_id!=user.id or obj.status not in {'PENDING','ARRIVED'}: return []
         return [{'id':configuration.pk,'name':configuration.name} for configuration in FieldActivityTemplate.objects.filter(company=obj.activity.company,activity_type=obj.activity.activity_type,is_active=True,form_template__isnull=False).select_related('form_template') if FormAccess.eligible(user,configuration.form_template)]
 
-    def get_allowed_actions(self,obj):
+    def get_allowed_actions(self,obj) -> list[str]:
         from .services import FieldOperationService
         user=self.context['request'].user
         if obj.activity.company_id!=user.company_id or not (FieldOperationService._is_worker(user,obj.activity) or FieldOperationService._can_manage(user)): return []

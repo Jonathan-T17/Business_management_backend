@@ -1,4 +1,5 @@
 from django.http import FileResponse
+from drf_spectacular.utils import extend_schema
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -83,6 +84,13 @@ class OfficialRecordViewSet(viewsets.ReadOnlyModelViewSet):
 		)
 
 
+@extend_schema(responses={200: {
+    "type": "object", "properties": {
+        "valid": {"type": "boolean"}, "record_number": {"type": "string"},
+        "company": {"type": "string"}, "record_type": {"type": "string"},
+        "issued_at": {"type": "string", "format": "date-time"}, "status": {"type": "string"},
+    }, "required": ["valid", "record_number", "company", "record_type", "issued_at", "status"],
+}})
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def verify_record(request, token):

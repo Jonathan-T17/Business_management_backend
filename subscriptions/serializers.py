@@ -37,7 +37,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
     allowed_actions = serializers.SerializerMethodField()
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         user = getattr(self.context.get("request"), "user", None)
         if user and user.role == "ADMIN" and not user.is_superuser and user.company_id == obj.company_id and obj.is_active:
             return ["CANCEL"]

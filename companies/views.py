@@ -378,6 +378,7 @@ class CompanyInviteViewSet(viewsets.ModelViewSet):
             created_by=user,
             request=self.request,
             days_valid=serializer.validated_data.get("days_valid"),
+            position=serializer.validated_data.get("position"),
         )
 
         # ✅ Attach the instance back to serializer

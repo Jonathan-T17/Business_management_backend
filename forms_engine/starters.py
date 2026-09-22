@@ -1,5 +1,11 @@
 # Product-owned starter designs contain no tenant data or assignments.
 STARTERS = [
+    {'code':'collection-record','name':'Goods or materials collection','category':'COLLECTION','allow_drafts':True,'fields':[
+        {'key':'collection_date','label':'Collection date','field_type':'DATE','required':True,'classification':'NORMAL'},
+        {'key':'item','label':'Goods or material collected','field_type':'TEXT','required':True,'classification':'NORMAL'},
+        {'key':'quantity','label':'Quantity collected','field_type':'DECIMAL','required':True,'classification':'NORMAL'},
+        {'key':'unit','label':'Unit (for example kg, litres or items)','field_type':'TEXT','required':True,'classification':'NORMAL'},
+        {'key':'notes','label':'Collection notes','field_type':'LONG_TEXT','required':False,'classification':'NORMAL'}]},
     {'code':'vehicle-request','name':'Vehicle request','category':'REQUEST','allow_drafts':True,'fields':[
         {'key':'destination','label':'Destination','field_type':'TEXT','required':True,'classification':'NORMAL'},
         {'key':'travel_date','label':'Travel date','field_type':'DATE','required':True,'classification':'NORMAL'},

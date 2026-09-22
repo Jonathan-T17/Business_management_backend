@@ -29,6 +29,8 @@ class WorkflowService:
 
     @staticmethod
     def can_act_for_recipient(*, actor, recipient, permission):
+        from core.position_scope import PositionScope
+        if not PositionScope.recipient_current(recipient): return False
         if recipient.user_id == actor.id:
             return True
 
@@ -111,15 +113,9 @@ class WorkflowService:
         # -----------------------------------
 
         if recipient_type == "POSITION":
-
-            return list(
-                queryset.filter(
-                    employee_profile__position=
-                        step.recipient_position,
-                    employee_profile__status=
-                        "ACTIVE",
-                ).distinct()
-            )
+            from core.position_scope import PositionScope
+            return list(PositionScope.position_users(company=company,position=step.recipient_position,
+                branch_id=getattr(target,"branch_id",None)))
 
         # -----------------------------------
         # Company admins

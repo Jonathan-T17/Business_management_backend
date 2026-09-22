@@ -61,13 +61,13 @@ class TaskSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
-    def get_assignee_names(self, obj):
+    def get_assignee_names(self, obj) -> list[str]:
         return [
             user.full_name
             for user in obj.assignees.all()
         ]
 
-    def get_is_overdue(self, obj):
+    def get_is_overdue(self, obj) -> bool:
         return obj.is_overdue()
 
     def __init__(self, *args, **kwargs):

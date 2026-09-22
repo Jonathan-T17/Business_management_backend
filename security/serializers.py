@@ -6,7 +6,7 @@ class TrustedDeviceSerializer(serializers.ModelSerializer):
     last_used_at = serializers.DateTimeField(source="last_seen", read_only=True)
     allowed_actions = serializers.SerializerMethodField()
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         request = self.context.get("request")
         return ["REVOKE"] if request and obj.user_id == request.user.pk and obj.is_active else []
 
@@ -45,7 +45,7 @@ class CompanyAuditLogSerializer(serializers.ModelSerializer):
 class ActiveSessionSerializer(serializers.ModelSerializer):
     allowed_actions = serializers.SerializerMethodField()
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         request = self.context.get("request")
         return ["REVOKE"] if request and obj.user_id == request.user.pk and obj.is_active else []
 

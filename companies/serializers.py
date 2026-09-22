@@ -52,6 +52,31 @@ class CompanySerializer(serializers.ModelSerializer):
             "setup_completed_at",
         )
 
+    def validate_timezone(self, value):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        try:
+            ZoneInfo(value.strip())
+        except (ZoneInfoNotFoundError, ValueError):
+            raise serializers.ValidationError("Choose a valid timezone, for example Africa/Kigali.")
+        return value.strip()
+
+    def validate_country(self, value):
+        value = value.strip().upper()
+        if len(value) != 2 or not value.isascii() or not value.isalpha():
+            raise serializers.ValidationError("Use a two-letter country code, for example RW.")
+        return value
+
+    def validate_default_currency(self, value):
+        value = value.strip().upper()
+        if len(value) != 3 or not value.isascii() or not value.isalpha():
+            raise serializers.ValidationError("Use a three-letter currency code, for example RWF.")
+        return value
+
+    def validate_official_name(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Official company name is required.")
+        return value.strip()
+
     def validate_name(self, value):
         value = value.strip()
 
@@ -189,6 +214,7 @@ class CompanyInviteSerializer(serializers.ModelSerializer):
             "company",
             "email",
             "role",
+            "position",
             "status",
             "token",
             "expires_at",
@@ -208,6 +234,11 @@ class CompanyInviteSerializer(serializers.ModelSerializer):
             "created_by",
             "created_at",
         )
+
+    def validate_position(self, value):
+        if value and (value.company_id != self.context["request"].user.company_id or not value.is_active):
+            raise serializers.ValidationError("Choose an active position in your company.")
+        return value
 
     def validate_email(self, value):
         return value.strip().lower()

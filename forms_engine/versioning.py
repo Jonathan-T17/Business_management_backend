@@ -125,8 +125,8 @@ class FormTemplateVersionService:
         if not any(f['is_active'] for f in fields): raise ValidationError('Add at least one active field.')
         config={key:getattr(template,key) for key in cls.CONFIG}
         cls.validate(actor=actor,company=template.company,data=config,fields=fields)
-        if template.workflow and (not template.workflow.is_active or template.workflow.lifecycle_status!='PUBLISHED'):
-            raise ValidationError({'workflow':'Publish the approval workflow first.'})
+        if template.workflow and not template.workflow.is_active:
+            raise ValidationError({'workflow':'Activate the approval workflow before publishing this form.'})
         FormTemplate.objects.filter(company=template.company,code=template.code,lifecycle_status='PUBLISHED').exclude(pk=template.pk).update(lifecycle_status='ARCHIVED',is_active=False)
         template.lifecycle_status='PUBLISHED';template.is_active=True;template.save()
         cls.audit(template,actor,'Published form version')

@@ -21,7 +21,7 @@ class ConversationMemberSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
-    def get_unread_count(self, obj):
+    def get_unread_count(self, obj) -> int:
         messages = obj.conversation.messages.filter(deleted_at__isnull=True)
         if obj.last_read_at:
             messages = messages.filter(created_at__gt=obj.last_read_at)
@@ -67,7 +67,7 @@ class ConversationSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({field: "Must belong to your company."})
         return attrs
 
-    def get_unread_count(self, obj):
+    def get_unread_count(self, obj) -> int:
         request = self.context["request"]
         membership = obj.memberships.filter(user=request.user).first()
         if not membership:

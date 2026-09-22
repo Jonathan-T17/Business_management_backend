@@ -68,7 +68,7 @@ class RouteOutput(serializers.ModelSerializer):
         model = ApprovalRoute
         fields = ['id', 'name', 'description', 'is_active', 'workflow', 'steps', 'steps_editable']
 
-    def get_steps_editable(self, obj):
+    def get_steps_editable(self, obj) -> bool:
         return not obj.workflow.instances.exists()
 
     def get_steps(self, obj):

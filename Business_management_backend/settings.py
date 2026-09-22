@@ -180,7 +180,7 @@ REST_FRAMEWORK = {
     ],
 
     "DEFAULT_SCHEMA_CLASS": (
-        "drf_spectacular.openapi.AutoSchema"
+        "core.schema.SmartBizAutoSchema"
     ),
 
     "EXCEPTION_HANDLER": (
@@ -225,7 +225,10 @@ SIMPLE_JWT = {
 }
 
 
+from core.schema_enums import ENUM_NAME_OVERRIDES
+
 SPECTACULAR_SETTINGS = {
+    "ENUM_NAME_OVERRIDES": ENUM_NAME_OVERRIDES,
     'TITLE': 'Business Management System API',
     'DESCRIPTION': 'Secure SaaS backend with AI analytics',
     'VERSION': '1.0.0',

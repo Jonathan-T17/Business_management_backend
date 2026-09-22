@@ -1,5 +1,6 @@
 from copy import deepcopy
 from django.db import transaction
+from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
@@ -12,7 +13,7 @@ from organizations.models import Department, Position
 from .models import CompanySetupState, RolePreset
 from .capability_policy import SetupCapabilityPolicy
 from .readiness import SetupReadinessService
-from .setup_contract import SETUP_STEPS, REQUIRED_STEPS
+from .setup_contract import SETUP_STEPS, REQUIRED_STEPS, REVIEW_STEPS, SETUP_VERSION
 
 class SetupStateService:
     @classmethod
@@ -30,9 +31,11 @@ class SetupStateService:
 
         if step == "finish":
             return cls.finish(company=company, actor=actor, request=request)
+        if step in REQUIRED_STEPS and step not in SetupReadinessService.configured_steps(company):
+            raise ValidationError({"step": "Save the required configuration before completing this step."})
         state = cls.state_for(company)
         state.skipped_steps = [code for code in state.skipped_steps if code != step]
-        completed = list(dict.fromkeys([*state.completed_steps, step]))
+        completed = list(dict.fromkeys([*state.completed_steps, step, *(["v2:" + step] if step in REVIEW_STEPS else [])]))
         state.completed_steps = completed
 
         order = [code for code, _ in SETUP_STEPS]
@@ -79,9 +82,13 @@ class SetupStateService:
             raise ValidationError({"setup": "Blocking setup checks must be resolved first.", "readiness": readiness})
         state = cls.state_for(company)
         state.onboarding_completed = True
+        state.setup_version = SETUP_VERSION
         state.current_step = ""
-        state.completed_steps = list(dict.fromkeys([*state.completed_steps, "finish"]))
-        state.save(update_fields=["onboarding_completed", "completed_steps", "current_step", "updated_at"])
+        state.completed_steps = list(dict.fromkeys([*state.completed_steps, *sorted(SetupReadinessService.completed_steps(company)), "finish"]))
+        if company.setup_completed_at is None:
+            company.setup_completed_at = timezone.now()
+            company.save(update_fields=["setup_completed_at"])
+        state.save(update_fields=["onboarding_completed", "setup_version", "completed_steps", "current_step", "updated_at"])
         create_audit_log(
             user=actor, company=company, request=request, action="UPDATE",
             description="Company onboarding completed.", obj=state,

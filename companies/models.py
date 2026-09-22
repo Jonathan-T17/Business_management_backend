@@ -225,6 +225,7 @@ class Branch(models.Model):
 
 
 class CompanyInvite(models.Model):
+    position = models.ForeignKey("organizations.Position", null=True, blank=True, on_delete=models.PROTECT, related_name="invitations")
     STATUS = (
         ("PENDING", "Pending"),
         ("ACCEPTED", "Accepted"),

@@ -13,7 +13,7 @@ class BusinessRequestSerializer(
 
     form_attachment_submission_id = serializers.SerializerMethodField()
 
-    def get_form_attachment_submission_id(self, obj):
+    def get_form_attachment_submission_id(self, obj) -> str | None:
         if not obj.form_submission_id:
             return None
         from forms_engine.models import FormSubmission
@@ -27,16 +27,16 @@ class BusinessRequestSerializer(
     form_schema = serializers.SerializerMethodField()
     form_answers = serializers.SerializerMethodField()
 
-    def get_form_schema(self,obj):
+    def get_form_schema(self,obj) -> dict | None:
         return obj.form_submission.schema_snapshot if obj.form_submission_id else None
 
-    def get_form_answers(self,obj):
+    def get_form_answers(self,obj) -> dict | None:
         from forms_engine.policy import FormSubmissionDisclosurePolicy
         return FormSubmissionDisclosurePolicy.data_for(submission=obj.form_submission,user=self.context['request'].user) if obj.form_submission_id else None
 
     allowed_actions = serializers.SerializerMethodField()
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         from .services import BusinessRequestLifecycleService
         return BusinessRequestLifecycleService.allowed_actions(request_obj=obj, actor=self.context["request"].user)
 

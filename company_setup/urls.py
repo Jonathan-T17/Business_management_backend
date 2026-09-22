@@ -1,11 +1,13 @@
 from django.urls import path
 from .views import (
+    SetupAccessView,
     SetupTemplatesView, SetupTemplateApplyView,
     SetupFinishView, SetupHealthView, SetupStatusView,
     SetupStepCompleteView, SetupStepSkipView,
 )
 
 urlpatterns = [
+    path("access/", SetupAccessView.as_view(), name="company-setup-access"),
     path("templates/", SetupTemplatesView.as_view()),
     path("templates/<slug:code>/apply/", SetupTemplateApplyView.as_view()),
     path("status/", SetupStatusView.as_view(), name="company-setup-status"),
@@ -33,3 +35,6 @@ router.register('notification-policies', NotificationPolicyViewSet, basename='se
 urlpatterns += router.urls
 from .configuration_views import SetupCapabilitiesView
 urlpatterns += [path('capabilities/', SetupCapabilitiesView.as_view(), name='setup-capabilities')]
+
+from .position_access import PositionAccessView
+urlpatterns += [path("positions/<int:pk>/access/", PositionAccessView.as_view(), name="setup-position-access")]

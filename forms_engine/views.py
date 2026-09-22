@@ -147,7 +147,7 @@ class FormTemplateViewSet(
             'branches':list(Branch.objects.filter(company=company).values('id','name')),
             'departments':list(Department.objects.filter(company=company).values('id','name')),
             'teams':list(Team.objects.filter(company=company).values('id','name')),
-            'workflows':list(WorkflowDefinition.objects.filter(company=company,target_type='FORM_SUBMISSION',lifecycle_status='PUBLISHED',is_active=True).values('id','name')),
+            'workflows':list(WorkflowDefinition.objects.filter(company=company,target_type='FORM_SUBMISSION',is_active=True).values('id','name')),
         })
 
     @action(detail=False,methods=['get'])

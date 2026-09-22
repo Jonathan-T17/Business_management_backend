@@ -533,6 +533,17 @@ class FormSubmissionService:
                 "Form belongs to another company."
             )
 
+        # A branch-specific form keeps its branch when filled through another position.
+        branch = branch or template.branch or getattr(user,"branch",None)
+        department = department or template.department
+        team = team or template.team
+        from core.capability_service import CapabilityService
+        from core.position_scope import PositionScope
+        if not (CapabilityService.has_company(user,"SUBMIT_FORMS") or CapabilityService.has_company(user,"USE_FORMS")):
+            allowed=PositionScope.branches_for(user,"SUBMIT_FORMS") | PositionScope.branches_for(user,"USE_FORMS")
+            if getattr(branch,"pk",None) not in allowed:
+                raise ValidationError("Choose a submission location within your assigned access.")
+
         cls._validate_scope(
             company=company,
             template=template,
@@ -657,8 +668,8 @@ class FormSubmissionService:
                 from reporting_schedules.services import ReportingObligationStateService
                 ReportingObligationStateService.mark_submitted(obligation=submission.reporting_obligation,submitted_at=submission.submitted_at)
             return submission,None
-        if workflow.company_id!=submission.company_id or workflow.target_type!='FORM_SUBMISSION' or workflow.lifecycle_status!='PUBLISHED':
-            raise ValidationError('No published form approval workflow is available.')
+        if workflow.company_id!=submission.company_id or workflow.target_type!='FORM_SUBMISSION' or not workflow.is_active:
+            raise ValidationError('No active form approval workflow is available.')
 
         from workflows.runtime_service import WorkflowRuntimeService
         instance = WorkflowRuntimeService.start(

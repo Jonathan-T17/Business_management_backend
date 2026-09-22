@@ -4,6 +4,7 @@ from django.db.models.functions import Cast
 
 from core.capabilities import Capabilities
 from core.capability_service import CapabilityService
+from core.position_scope import PositionScope
 
 
 class VisibilityService:
@@ -53,10 +54,10 @@ class VisibilityService:
         if not cls._tenant_user(user):
             return False
         instances = cls._workflow_instances_for(user, obj)
-        return instances.filter(submitted_by=user).exists() or WorkflowStepRecipient.objects.filter(
+        return instances.filter(submitted_by=user).exists() or PositionScope.current_recipients(WorkflowStepRecipient.objects.filter(
             step__workflow_instance__in=instances,
             user=user,
-        ).exists()
+        )).exists()
 
     @staticmethod
     def delegated_user_ids(*, user, permission):
@@ -87,10 +88,10 @@ class VisibilityService:
         recipient_ids = cls.delegated_user_ids(user=user, permission=permission)
         if not recipient_ids:
             return False
-        return WorkflowStepRecipient.objects.filter(
+        return PositionScope.current_recipients(WorkflowStepRecipient.objects.filter(
             step__workflow_instance__in=cls._workflow_instances_for(user, obj),
             user_id__in=recipient_ids,
-        ).exists()
+        )).exists()
 
     @classmethod
     def workflow_object_ids(cls, *, user, model, delegated_permission=None):
@@ -108,11 +109,11 @@ class VisibilityService:
                 cls.delegated_user_ids(user=user, permission=delegated_permission)
             )
 
-        return WorkflowStepRecipient.objects.filter(
+        return PositionScope.current_recipients(WorkflowStepRecipient.objects.filter(
             user_id__in=recipient_ids,
             step__workflow_instance__company_id=user.company_id,
             step__workflow_instance__content_type=content_type,
-        ).values_list("step__workflow_instance__object_id", flat=True).distinct()
+        )).values_list("step__workflow_instance__object_id", flat=True).distinct()
 
     # ------------------------------------------------------------------
     # Projects / tasks
@@ -160,7 +161,7 @@ class VisibilityService:
             return False
         if report.created_by_id == user.id:
             return True
-        if CapabilityService.has(user, Capabilities.VIEW_ALL_REPORTS):
+        if CapabilityService.has_company(user, Capabilities.VIEW_ALL_REPORTS) or report.branch_id in PositionScope.branches_for(user, Capabilities.VIEW_ALL_REPORTS):
             return True
         if cls.is_workflow_participant(user=user, obj=report):
             return True
@@ -182,7 +183,7 @@ class VisibilityService:
             return queryset.none()
 
         queryset = queryset.filter(company_id=user.company_id)
-        if CapabilityService.has(user, Capabilities.VIEW_ALL_REPORTS):
+        if CapabilityService.has_company(user, Capabilities.VIEW_ALL_REPORTS):
             return queryset
 
         from reports.models import Report
@@ -197,7 +198,8 @@ class VisibilityService:
         workflow_ids = [str(item) for item in workflow_ids]
 
         return queryset.filter(
-            Q(created_by=user)
+            Q(branch_id__in=PositionScope.branches_for(user, Capabilities.VIEW_ALL_REPORTS))
+            | Q(created_by=user)
             | Q(visibility="COMPANY")
             | Q(visibility="BRANCH", branch_id=user.branch_id)
             | Q(visibility="PROJECT", project__memberships__user=user)
@@ -225,6 +227,7 @@ class VisibilityService:
             return queryset.filter(submitted_by=user)
         return queryset.filter(
             Q(submitted_by=user) | Q(id__in=[str(item) for item in workflow_ids])
+            | Q(branch_id__in=PositionScope.branches_for(user, Capabilities.VIEW_FORM_SUBMISSIONS))
         ).distinct()
 
     @classmethod

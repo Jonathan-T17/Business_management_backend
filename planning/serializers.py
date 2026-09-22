@@ -53,7 +53,7 @@ class CompanyPlanSerializer(
     at_risk_items = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
 
-    def get_allowed_actions(self, obj):
+    def get_allowed_actions(self, obj) -> list[str]:
         from core.capabilities import Capabilities
         from core.capability_service import CapabilityService
         from .access import PlanningAccessService
@@ -64,17 +64,17 @@ class CompanyPlanSerializer(
         names = {"ACTIVE": "ACTIVATE", "COMPLETED": "COMPLETE", "CANCELLED": "CANCEL", "ARCHIVED": "ARCHIVE"}
         return [names[state] for state in names if state in PlanningService.TRANSITIONS.get(obj.status, set())]
 
-    def get_total_items(self, obj):
+    def get_total_items(self, obj) -> int:
         return len(obj.items.all())
 
-    def get_completed_items(self, obj):
+    def get_completed_items(self, obj) -> int:
         return sum(item.status == "COMPLETED" for item in obj.items.all())
 
-    def get_at_risk_items(self, obj):
+    def get_at_risk_items(self, obj) -> int:
         from django.utils import timezone
         return sum(item.status == "BLOCKED" or (item.status not in {"COMPLETED", "CANCELLED"} and item.due_date is not None and item.due_date < timezone.localdate()) for item in obj.items.all())
 
-    def get_progress(self, obj):
+    def get_progress(self, obj) -> int:
         total = self.get_total_items(obj)
         return round(100 * self.get_completed_items(obj) / total) if total else 0
 
