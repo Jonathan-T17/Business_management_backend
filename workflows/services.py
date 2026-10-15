@@ -154,11 +154,18 @@ class WorkflowService:
             if (
                 profile.manager
                 and profile.manager.is_active
+                and profile.manager.company_id == company.pk
+                and not profile.manager.is_deleted
             ):
                 return [
                     profile.manager
                 ]
 
+            from core.position_scope import PositionScope
+            position = PositionScope.primary_position(submitted_by)
+            if position and position.reports_to_id:
+                return list(PositionScope.position_users(company=company, position=position.reports_to,
+                    branch_id=getattr(target, 'branch_id', None)))
             return []
 
         # -----------------------------------
@@ -864,20 +871,8 @@ class WorkflowService:
                     "forms_engine": "FORM_SUBMISSION",
                 }.get(target._meta.app_label)
                 if record_type:
-                    from records_management.services import OfficialRecordService
-
-                    OfficialRecordService.issue_if_configured(
-                        source=target,
-                        record_type=record_type,
-                        status=status,
-                        actor=actor,
-                        title=getattr(target, "title", None) or str(target),
-                        snapshot={
-                            "status": status,
-                            "source_id": str(target.pk),
-                        },
-                        branch=getattr(target, "branch", None),
-                    )
+                    from records_management.finalizer import OfficialRecordFinalizer
+                    OfficialRecordFinalizer.finalize(source=target, actor=actor)
 
     @staticmethod
     def _notify_step(
@@ -910,6 +905,8 @@ class WorkflowService:
 
                 notification_type=
                     "WORKFLOW_ACTION",
+
+                url=f"/approvals/{step.workflow_instance.pk}",
 
                 title=(
                     f"Action required: "

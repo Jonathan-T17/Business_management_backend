@@ -9,6 +9,18 @@ from .models import (
 )
 
 class CompanySerializer(serializers.ModelSerializer):
+
+    def validate_logo(self, value):
+        if value is None:
+            return value
+        if value.size > 2 * 1024 * 1024:
+            raise serializers.ValidationError('Choose a logo smaller than 2 MB.')
+        image = getattr(value, 'image', None)
+        if image is None or image.format not in {'PNG', 'JPEG', 'WEBP'}:
+            raise serializers.ValidationError('Choose a PNG, JPG or WebP image.')
+        if image.width > 4096 or image.height > 4096:
+            raise serializers.ValidationError('Choose an image no larger than 4096 × 4096 pixels.')
+        return value
     
     class Meta:
         model = Company
@@ -32,6 +44,7 @@ class CompanySerializer(serializers.ModelSerializer):
             "date_format",
             "week_starts_on",
             "setup_completed_at",
+            "headquarters",
 
             "email_from_name",
             "email_reply_to",
@@ -46,10 +59,12 @@ class CompanySerializer(serializers.ModelSerializer):
 
         read_only_fields = (
             "id",
+            "is_active",
             "slug",
             "created_at",
             "updated_at",
             "setup_completed_at",
+            "headquarters",
         )
 
     def validate_timezone(self, value):
@@ -103,6 +118,11 @@ class CompanySerializer(serializers.ModelSerializer):
 
 
 class BranchSerializer(serializers.ModelSerializer):
+    is_headquarters = serializers.SerializerMethodField()
+
+    def get_is_headquarters(self, obj) -> bool:
+        return obj.company.headquarters_id == obj.pk
+
     class Meta:
         model = Branch
 
@@ -112,6 +132,7 @@ class BranchSerializer(serializers.ModelSerializer):
             "name",
             "code",
             "location",
+            "is_headquarters",
             "manager",
             "is_active",
             "created_by",
@@ -200,6 +221,37 @@ class BranchSerializer(serializers.ModelSerializer):
 
 
 class CompanyInviteSerializer(serializers.ModelSerializer):
+    employee_profile_id = serializers.SerializerMethodField()
+    assignment_status = serializers.SerializerMethodField()
+
+    def _accepted_profile(self, obj):
+        if obj.status != "ACCEPTED":
+            return None
+        from organizations.models import EmployeeProfile
+        return EmployeeProfile.objects.filter(
+            company_id=obj.company_id, user__email__iexact=obj.email,
+        ).select_related("position").first()
+
+    def get_employee_profile_id(self, obj) -> int | None:
+        profile = self._accepted_profile(obj)
+        return profile.pk if profile else None
+
+    def get_assignment_status(self, obj) -> str:
+        from django.utils import timezone
+        if obj.status == "PENDING" and obj.expires_at <= timezone.now():
+            return "EXPIRED"
+        if obj.status != "ACCEPTED":
+            return obj.status
+        if obj.role == "ADMIN":
+            return "ADMINISTRATOR"
+        profile = self._accepted_profile(obj)
+        has_active_position = (
+            profile and profile.status == "ACTIVE" and profile.position_id
+            and profile.position.is_active
+            and profile.position.company_id == obj.company_id
+        )
+        return "POSITION_ASSIGNED" if has_active_position else "AWAITING_POSITION"
+
     days_valid = serializers.ChoiceField(
         choices=[(i, f"{i} day{'s' if i > 1 else ''}") for i in range(1, 8)],
         write_only=True,
@@ -222,6 +274,8 @@ class CompanyInviteSerializer(serializers.ModelSerializer):
             "created_by",
             "created_at",
             "days_valid",
+            "employee_profile_id",
+            "assignment_status",
         )
 
         read_only_fields = (

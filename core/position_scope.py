@@ -1,13 +1,41 @@
-"""Additional-position grants retain their scope; they are never flattened into admin access."""
+"""Primary and additional positions contribute explicitly scoped access."""
 from django.db.models import Q, F
 
 # These capabilities have explicit scope-aware operational consumers below.
 BRANCH_CAPABILITIES = {
     "USE_FORMS", "SUBMIT_FORMS", "VIEW_FORM_SUBMISSIONS", "REVIEW_SUBMISSIONS",
     "VIEW_ALL_REPORTS", "VIEW_COMPANY_ANALYTICS",
+    "VIEW_ALL_EMPLOYEES",
 }
 
 class PositionScope:
+    @staticmethod
+    def primary_position(user):
+        from core.capability_service import CapabilityService
+        if not CapabilityService.is_tenant_identity(user):
+            return None
+        profile = getattr(user, "employee_profile", None)
+        if not profile or profile.company_id != user.company_id or profile.status != "ACTIVE" or not profile.position_id:
+            return None
+        position = profile.position
+        if not position.is_active or position.company_id != user.company_id:
+            return None
+        if position.primary_scope == "BRANCH" and (
+            not position.branch_id or not position.branch.is_active or position.branch.company_id != user.company_id
+        ):
+            return None
+        return position
+
+    @classmethod
+    def primary_capabilities(cls, user, *, company_only=False):
+        position = cls.primary_position(user)
+        if position is None or (company_only and position.primary_scope != "COMPANY"):
+            return set()
+        caps = set(position.capability_grants.filter(company_id=user.company_id, is_active=True).values_list("capability", flat=True))
+        if position.primary_scope == "COMPANY":
+            return caps
+        return caps & BRANCH_CAPABILITIES if position.primary_scope == "BRANCH" else set()
+
     @staticmethod
     def assignments(user):
         from organizations.models import EmployeePositionAssignment
@@ -35,9 +63,13 @@ class PositionScope:
     @classmethod
     def branches_for(cls,user,capability):
         if capability not in BRANCH_CAPABILITIES: return set()
-        return set(cls.assignments(user).filter(scope="BRANCHES",position__capability_grants__capability=capability,
+        branches = set(cls.assignments(user).filter(scope="BRANCHES",position__capability_grants__capability=capability,
             position__capability_grants__is_active=True,position__capability_grants__company_id=user.company_id,
             branches__company_id=user.company_id,branches__is_active=True).values_list("branches__id",flat=True))
+        primary = cls.primary_position(user)
+        if primary and primary.primary_scope == "BRANCH" and capability in cls.primary_capabilities(user):
+            branches.add(primary.branch_id)
+        return branches
 
     @classmethod
     def scope_q(cls,user,capability,field="branch_id"):
@@ -49,11 +81,19 @@ class PositionScope:
     def position_users(cls, *, company, position, branch_id=None):
         from users.models import User
         from organizations.models import EmployeePositionAssignment
+        if position.company_id != company.pk or not position.is_active:
+            return User.objects.none()
         extra=EmployeePositionAssignment.objects.filter(company=company,employee__company=company,
             employee__status="ACTIVE",position=position,position__company=company,position__is_active=True,is_active=True)
         extra=extra.filter(Q(scope="COMPANY") | Q(scope="BRANCHES",branches__id=branch_id,branches__company=company,branches__is_active=True)) if branch_id else extra.filter(scope="COMPANY")
+        primary = Q(employee_profile__position=position, employee_profile__status="ACTIVE",
+                    employee_profile__position__is_active=True, employee_profile__company=company)
+        if position.primary_scope == "BRANCH":
+            primary &= Q(employee_profile__position__branch_id=branch_id,
+                         employee_profile__position__branch__company=company,
+                         employee_profile__position__branch__is_active=True) if branch_id else Q(pk__in=[])
         return User.objects.filter(company=company,is_active=True,is_deleted=False,is_superuser=False).exclude(role="SUPERUSER").filter(
-            Q(employee_profile__position=position,employee_profile__status="ACTIVE",employee_profile__position__is_active=True) |
+            primary |
             Q(employee_profile__in=extra.values("employee_id"))).distinct()
 
     @classmethod

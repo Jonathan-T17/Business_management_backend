@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .models import ActiveSession, TrustedDevice, AuditLog, LoginHistory
 from .serializers import ActiveSessionSerializer, CompanyAuditLogSerializer, TrustedDeviceSerializer, AuditLogSerializer, LoginHistorySerializer
-from security.services import create_audit_log, terminate_session
+from security.services import create_audit_log, terminate_session, current_sessions
 from companies.permissions import IsCompanyAdmin
 from users.permissions import IsSuperUserOrPlatformAdmin
 
@@ -50,7 +50,7 @@ class MySessionViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return ActiveSession.objects.filter(user=self.request.user, is_active=True).order_by("-last_activity")
+        return current_sessions().filter(user=self.request.user).order_by("-last_activity")
 
     @action(detail=True, methods=["post"])
     def revoke(self, request, pk=None):
@@ -112,17 +112,5 @@ class CompanyActiveSessionViewSet(viewsets.ReadOnlyModelViewSet):
         session = self.get_object()
         if not session.is_active:
             return Response({"message": "Session is already terminated."})
-        session.is_active = False
-        session.terminated_at = timezone.now()
-        session.save(update_fields=["is_active", "terminated_at"])
-        create_audit_log(
-            user=request.user,
-            company=request.user.company,
-            request=request,
-            action="SECURITY",
-            description=(
-                f"Terminated active session for {session.user.email}."
-            ),
-            obj=session,
-        )
+        terminate_session(session=session, actor=request.user, reason="ADMIN", request=request)
         return Response({"message": "Session terminated."})

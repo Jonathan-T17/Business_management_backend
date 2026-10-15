@@ -1,0 +1,15 @@
+{% extends "admin/login.html" %}
+{% block content %}
+<div id="content-main">
+  <p>Recovery administration requires your password and a fresh email verification code. Sign in first to receive the code, then enter it and re-enter your password.</p>
+  {{ form.non_field_errors }}
+  <form action="{{ app_path }}" method="post" id="login-form">{% csrf_token %}
+    <div class="form-row">{{ form.username.errors }}{{ form.username.label_tag }}{{ form.username }}</div>
+    <div class="form-row">{{ form.password.errors }}{{ form.password.label_tag }}{{ form.password }}</div>
+    <div class="form-row">{{ form.verification_code.errors }}{{ form.verification_code.label_tag }}{{ form.verification_code }}</div>
+    {{ form.challenge_id }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <div class="submit-row"><input type="submit" value="Continue sign-in"></div>
+  </form>
+</div>
+{% endblock %}

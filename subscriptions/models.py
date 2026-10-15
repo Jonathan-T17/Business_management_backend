@@ -95,6 +95,8 @@ class Subscription(models.Model):
         blank=True,
     )
 
+    renewed_at = models.DateTimeField(null=True, blank=True, editable=False)
+
     updated_at = models.DateTimeField(
         auto_now=True
     )

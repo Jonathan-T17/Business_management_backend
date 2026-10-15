@@ -186,3 +186,4 @@ ENUM_NAME_OVERRIDES = {'AIInsightSeverityEnum': [('INFO', 'Info'),
                                      ('SKIPPED', 'Skipped')]}
 
 ENUM_NAME_OVERRIDES["PositionAssignmentScopeEnum"] = [("COMPANY", "Company-wide"), ("BRANCHES", "Selected locations")]
+ENUM_NAME_OVERRIDES["WorkflowRecipientTypeEnum"] = "workflows.models.WorkflowStepDefinition.RECIPIENT_TYPES"

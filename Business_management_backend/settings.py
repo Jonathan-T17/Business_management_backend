@@ -27,11 +27,20 @@ AUTH_USER_MODEL = 'users.User'
 
 from decouple import config
 
+# Enabling deletion requires reviewed storage and backup retention, not just expiry.
+WORKSPACE_PURGE_ENABLED = config("WORKSPACE_PURGE_ENABLED", default=False, cast=bool)
+WORKSPACE_PURGE_BACKUP_RETENTION_DAYS = config("WORKSPACE_PURGE_BACKUP_RETENTION_DAYS", default=0, cast=int)
+WORKSPACE_PURGE_LEDGER_DIR = config("WORKSPACE_PURGE_LEDGER_DIR", default="")
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
+TRUSTED_PROXY_NETWORKS = [value.strip() for value in config('TRUSTED_PROXY_NETWORKS', default='').split(',') if value.strip()]
+from ipaddress import ip_network
+# Invalid trust boundaries must fail startup rather than silently trust or misidentify peers.
+TRUSTED_PROXY_NETWORKS = [str(ip_network(value)) for value in TRUSTED_PROXY_NETWORKS]
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -127,6 +136,11 @@ WSGI_APPLICATION = 'Business_management_backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+ATTACHMENT_SCANNER = config('ATTACHMENT_SCANNER', default='')
+ATTACHMENT_SCAN_REQUIRED = config('ATTACHMENT_SCAN_REQUIRED', default=not DEBUG, cast=bool)
+CLAMAV_HOST = config('CLAMAV_HOST', default='127.0.0.1')
+CLAMAV_PORT = config('CLAMAV_PORT', default=3310, cast=int)
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -188,7 +202,7 @@ REST_FRAMEWORK = {
     ),
 
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
+        "api.throttles.TrustedClientAnonThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ],
 
@@ -336,3 +350,11 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 2000
+
+# WebAuthn identity is explicit and never derived from request headers.
+WEBAUTHN_RP_ID = config("WEBAUTHN_RP_ID", default="localhost" if DEBUG else "")
+WEBAUTHN_ORIGINS = tuple(value.strip() for value in config("WEBAUTHN_ORIGINS", default="http://localhost:3000" if DEBUG else "").split(",") if value.strip())
+
+# Backup copies require an operator-selected protected destination.
+BACKUP_DIRECTORY = config("BACKUP_DIRECTORY", default="")
+BACKUP_ENCRYPTION_KEY = config("BACKUP_ENCRYPTION_KEY", default="")

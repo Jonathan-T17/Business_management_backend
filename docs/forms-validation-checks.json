@@ -1,0 +1,74 @@
+{
+  "scope": "Database-independent validators; no uploads or business entries",
+  "answers": [
+    {
+      "type": "DATE",
+      "value": "not-a-date",
+      "rules": {},
+      "outcome": "accepted"
+    },
+    {
+      "type": "TIME",
+      "value": "25:99",
+      "rules": {},
+      "outcome": "accepted"
+    },
+    {
+      "type": "DATETIME",
+      "value": "not-a-timestamp",
+      "rules": {},
+      "outcome": "accepted"
+    },
+    {
+      "type": "EMAIL",
+      "value": "not-an-email",
+      "rules": {},
+      "outcome": "accepted"
+    },
+    {
+      "type": "INTEGER",
+      "value": 1.9,
+      "rules": {},
+      "outcome": "accepted"
+    },
+    {
+      "type": "DECIMAL",
+      "value": "Infinity",
+      "rules": {},
+      "outcome": "accepted"
+    },
+    {
+      "type": "DECIMAL",
+      "value": "NaN",
+      "rules": {},
+      "outcome": "accepted"
+    },
+    {
+      "type": "DECIMAL",
+      "value": "NaN",
+      "rules": {
+        "min": 0
+      },
+      "outcome": "InvalidOperation"
+    },
+    {
+      "type": "DECIMAL",
+      "value": "5",
+      "rules": {
+        "min": "invalid"
+      },
+      "outcome": "InvalidOperation"
+    },
+    {
+      "type": "BOOLEAN",
+      "value": "true",
+      "rules": {},
+      "outcome": "ValidationError"
+    }
+  ],
+  "file_probe": {
+    "filename": "receipt.pdf",
+    "content": "Synthetic non-PDF bytes",
+    "accepted_mime": "application/pdf"
+  }
+}

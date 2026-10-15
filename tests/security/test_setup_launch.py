@@ -1,8 +1,20 @@
 import pytest
 from rest_framework.test import APIClient
-from rest_framework_simplejwt.tokens import AccessToken
+
+from django.test import RequestFactory
+from security.services import create_active_session
+from rest_framework_simplejwt.tokens import RefreshToken
+
+def bound_access_token(user):
+    refresh = RefreshToken.for_user(user)
+    session = create_active_session(RequestFactory().get("/"), user, refresh["jti"])
+    refresh["sid"] = str(session.pk)
+    return refresh.access_token
+
+
 from companies.models import Company
 from company_setup.models import CompanySetupState, RolePreset
+from company_setup.setup_contract import SETUP_VERSION
 from forms_engine.models import FormTemplate, FormSubmission
 
 
@@ -14,7 +26,7 @@ def workspace(django_user_model):
         is_active=True, account_state='ACTIVE', email_verified=True,
     )
     client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(user)}')
+    client.credentials(HTTP_AUTHORIZATION=f'Bearer {bound_access_token(user)}')
     return company, user, client
 
 
@@ -51,7 +63,8 @@ def test_real_token_setup_gate_and_configuration_completion(workspace):
     form.save(update_fields=['lifecycle_status'])
     from companies.models import Branch
     from organizations.models import Position
-    Branch.objects.create(company=company,name="Headquarters")
+    headquarters = Branch.objects.create(company=company,name="Headquarters")
+    assert client.put(base+"headquarters/", {"branch_id":headquarters.pk}).status_code == 200
     Position.objects.create(company=company,title="CEO")
     for step in ("organization", "departments", "positions", "permissions", "employees"):
         review=client.post(base+'steps/complete/', {"step":step})
@@ -91,7 +104,7 @@ def test_other_company_configuration_does_not_complete_setup(workspace):
 def test_submission_charts_are_scoped_and_filtered(workspace):
     from subscriptions.models import Plan, Subscription
     company, user, client = workspace
-    CompanySetupState.objects.create(company=company,onboarding_completed=True,setup_version=2)
+    CompanySetupState.objects.create(company=company,onboarding_completed=True,setup_version=SETUP_VERSION)
     from core.capabilities import Capabilities
     from core.capability_service import CapabilityService
     # Company admins receive operational analytics without an additional grant.
@@ -111,8 +124,12 @@ def test_submission_charts_are_scoped_and_filtered(workspace):
     assert response.data['submissions']['approved'] == 1
     assert sum(p['value'] for p in response.data['submission_trend']) == 1
     empty=client.get('/api/v1/analytics/overview/',{'end_date':'2000-01-01'})
+    assert empty.status_code == 200, empty.data
     assert empty.data['submissions']['approved'] == 0
-    assert empty.data['submission_trend'] == []
+    from datetime import date, timedelta
+    trend = empty.data['submission_trend']
+    assert [str(point['date']) for point in trend] == [str(date(2000, 1, 1)-timedelta(days=29-offset)) for offset in range(30)]
+    assert [point['value'] for point in trend] == [0] * 30
 
 
 @pytest.mark.django_db
@@ -176,10 +193,12 @@ def test_invitation_assigns_prepared_position(workspace):
 
 
 @pytest.mark.django_db
-def test_unassigned_invitee_is_restricted_until_position_assignment(workspace):
+@pytest.mark.parametrize("invite_role", ["EMPLOYEE", "MANAGER"])
+def test_unassigned_invitee_is_restricted_until_position_assignment(workspace, invite_role):
     from datetime import timedelta
     from django.utils import timezone
-    from companies.models import CompanyInvite
+    from companies.models import Branch, CompanyInvite
+    from companies.serializers import CompanyInviteSerializer
     from companies.services import CompanyInviteService
     from organizations.models import Position, EmployeeProfile, PositionCapabilityGrant, UserCapabilityGrant
     from subscriptions.models import Plan, Subscription
@@ -187,27 +206,49 @@ def test_unassigned_invitee_is_restricted_until_position_assignment(workspace):
     company, admin, _ = workspace
     plan = Plan.objects.create(name="Pending invite plan", max_users=10, max_projects=10, price_monthly=0)
     Subscription.objects.create(company=company, plan=plan)
-    user = type(admin).objects.create_user(email="pending-position@example.test", role="EMPLOYEE",
+    user = type(admin).objects.create_user(email="pending-position@example.test", role=invite_role,
         is_active=True, account_state="ACTIVE", email_verified=True)
-    invite = CompanyInvite.objects.create(company=company, email=user.email, role="EMPLOYEE",
+    invite = CompanyInvite.objects.create(company=company, email=user.email, role=invite_role,
         created_by=admin, expires_at=timezone.now()+timedelta(days=1))
     CompanyInviteService.accept_invite(invite=invite, user=user)
     profile = EmployeeProfile.objects.get(user=user)
     assert profile.position_id is None
-    CompanySetupState.objects.create(company=company, onboarding_completed=True, setup_version=2)
+    invite.refresh_from_db()
+    progress = CompanyInviteSerializer(invite).data
+    assert progress['assignment_status'] == 'AWAITING_POSITION'
+    assert progress['employee_profile_id'] == profile.pk
+    invite.delete()  # Membership restrictions must survive invitation history cleanup.
+    CompanySetupState.objects.create(company=company, onboarding_completed=True, setup_version=SETUP_VERSION)
     UserCapabilityGrant.objects.create(company=company, user=user, capability="VIEW_ALL_REPORTS")
     assert not CapabilityService.all_for(user)
     client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(user)}')
+    client.credentials(HTTP_AUTHORIZATION=f'Bearer {bound_access_token(user)}')
     assert client.get('/api/v1/company-setup/access/').data['awaiting_position'] is True
     assert client.get('/api/v1/profile/').status_code == 200
+    me = client.get('/api/v1/users/me/')
+    assert me.status_code == 200
+    assert me.data['awaiting_position'] is True
+    assert client.get('/api/v1/security/sessions/').status_code == 200
     for path in ('branches/', 'form-templates/', 'reports/', 'users/', 'company-setup/status/'):
         response = client.get('/api/v1/'+path)
         assert response.status_code == 403, (path, response.data)
-    position = Position.objects.create(company=company, title="Assigned operator")
+    branch = Branch.objects.create(company=company, name="Assigned location")
+    position = Position.objects.create(company=company, branch=branch, title="Assigned operator")
     PositionCapabilityGrant.objects.create(company=company, position=position, capability="USE_FORMS")
-    profile.position = position
-    profile.save(update_fields=['position'])
+    admin_client = APIClient()
+    admin_client.credentials(HTTP_AUTHORIZATION=f'Bearer {bound_access_token(admin)}')
+    restricted = Position.objects.create(company=company, title="Restricted executive")
+    PositionCapabilityGrant.objects.create(company=company, position=restricted, capability="VIEW_COMPENSATION")
+    assert admin_client.post(f'/api/v1/employees/{profile.pk}/assign-position/', {'position':restricted.pk}).status_code == 403
+    assert admin_client.patch(f'/api/v1/employees/{profile.pk}/', {'position':restricted.pk}).status_code == 403
+    inactive = Position.objects.create(company=company, title="Inactive role", is_active=False)
+    assert admin_client.post(f'/api/v1/employees/{profile.pk}/assign-position/', {'position':inactive.pk}).status_code == 400
+    response = admin_client.post(f'/api/v1/employees/{profile.pk}/assign-position/', {'position':position.pk})
+    assert response.status_code == 200, response.data
     assert client.get('/api/v1/company-setup/access/').data['awaiting_position'] is False
     user.refresh_from_db()
+    profile.refresh_from_db()
+    assert user.branch_id == branch.pk
+    assert profile.branch_id == branch.pk
+    assert client.get('/api/v1/users/me/').data['awaiting_position'] is False
     assert CapabilityService.has(user, 'USE_FORMS')

@@ -1,0 +1,324 @@
+[
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Attendance correction",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Branch operations summary",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Confirm materials received",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Daily collections summary",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Daily report",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Employee service request",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Equipment issue and return",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Expense approval request",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Expense reimbursement",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Goods collection form",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Incident report",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Inspection checklist",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Leave request",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Maintenance request",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Materials dispatch / delivery note",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Payment collection form",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Purchase request",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Request materials from headquarters",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Return materials",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Stock count",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Stock movement",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Vehicle request",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 844,
+    "name": "Weekly progress report",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Attendance correction",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Branch operations summary",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Confirm materials received",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Daily collections summary",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Daily report",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Employee service request",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Equipment issue and return",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Expense approval request",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Expense reimbursement",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Goods collection form",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Incident report",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Inspection checklist",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Leave request",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Maintenance request",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Materials dispatch / delivery note",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Payment collection form",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Purchase request",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Request materials from headquarters",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Return materials",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Stock count",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Stock movement",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Vehicle request",
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "clipped": 0,
+    "height": 900,
+    "name": "Weekly progress report",
+    "overflow": false,
+    "width": 1280
+  }
+]

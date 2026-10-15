@@ -179,7 +179,36 @@ class WorkflowRuntimeService:
         instance.save(update_fields=["status", "completed_at"])
         adapter = WorkflowTargetAdapterRegistry.for_target(instance.content_object)
         adapter.on_approved(target=instance.content_object, actor=actor, workflow_instance=instance, request=request)
+        cls._notify_submitter(instance=instance)
         return instance
+
+    @staticmethod
+    def _notify_submitter(*, instance):
+        from notifications.services import CommunicationService
+
+        recipient = instance.submitted_by
+        if not recipient or recipient.company_id != instance.company_id:
+            return
+        titles = {
+            "APPROVED": "Your submission was approved",
+            "RETURNED": "Changes requested on your submission",
+            "REJECTED": "Your submission was rejected",
+        }
+        url = f"/approvals/{instance.pk}"
+        if instance.content_type.model == "formsubmission":
+            url = f"/forms/submissions/{instance.object_id}"
+        CommunicationService.send(
+            recipient=recipient,
+            company=instance.company,
+            notification_type="REQUEST_UPDATE",
+            title=titles[instance.status],
+            message=("Open your submission to read the review and make the requested changes."
+                     if instance.status == "RETURNED"
+                     else "Open your submission to check the review outcome."),
+            url=url,
+            reference_id=str(instance.pk),
+            send_email=False,
+        )
 
     @classmethod
     @transaction.atomic
@@ -221,4 +250,5 @@ class WorkflowRuntimeService:
         WorkflowActionLog.objects.create(workflow_instance=instance, step=step, actor=actor, action=outcome, note=note)
         callback = adapter.on_rejected if outcome == "REJECTED" else adapter.on_returned
         callback(target=target, actor=actor, workflow_instance=instance, request=request)
+        cls._notify_submitter(instance=instance)
         return instance

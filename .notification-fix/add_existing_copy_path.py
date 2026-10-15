@@ -1,0 +1,2 @@
+from pathlib import Path
+p=Path('.notification-fix/approved-form-journey/src/components/forms/FormTemplateLibrary.tsx');s=p.read_text(encoding='utf-8').replace('You can review available template updates from your saved company form.</p></div>', 'Review available template updates from your saved form, or choose the latest template for a new copy.</p><Link href="/settings/forms/new" className="sb-text-link mt-2">Create a new copy from the library →</Link></div>');p.write_text(s,encoding='utf-8')

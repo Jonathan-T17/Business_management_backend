@@ -8,9 +8,25 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from core.roles import Roles
+from .purge_models import WorkspacePurgeReceipt
 
 
 class Company(models.Model):
+    deletion_hold_reason = models.TextField(blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    recovery_until = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name="workspaces_archived")
+    archive_reason = models.TextField(blank=True)
+    active_before_archive = models.BooleanField(default=True)
+
+    # A company designates one of its locations as its headquarters. Existing
+    # locations and company-level records are never moved by this designation.
+    headquarters = models.ForeignKey(
+        "Branch", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="headquarters_for",
+    )
+
     name = models.CharField(
         max_length=255,
         unique=True,
@@ -129,6 +145,10 @@ class Company(models.Model):
 
     class Meta:
         ordering = ["name"]
+        constraints = [models.CheckConstraint(
+            condition=Q(archived_at__isnull=True) | Q(is_active=False),
+            name="archived_company_is_inactive",
+        )]
 
     def save(self, *args, **kwargs):
         if not self.slug:

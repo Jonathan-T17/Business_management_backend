@@ -1,13 +1,26 @@
 from django.utils import timezone
 
 def get_client_ip(request):
-    """
-    Extract client IP address from request headers.
-    """
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded_for:
-        return x_forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
+    from ipaddress import ip_address, ip_network
+    from django.conf import settings
+    try:
+        peer = ip_address(request.META.get("REMOTE_ADDR", ""))
+        networks = [ip_network(value) for value in getattr(settings, "TRUSTED_PROXY_NETWORKS", [])]
+    except ValueError:
+        return None
+    if not any(peer in network for network in networks):
+        return str(peer)
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if not forwarded or len(forwarded) > 2048:
+        return str(peer)
+    try:
+        chain = [ip_address(value.strip()) for value in forwarded.split(",")]
+    except ValueError:
+        return str(peer)
+    for address in reversed(chain):
+        if not any(address in network for network in networks):
+            return str(address)
+    return str(peer)
 
 
 def user_company(user):

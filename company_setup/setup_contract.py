@@ -1,14 +1,14 @@
 from dataclasses import dataclass
 
 # Stable legacy codes remain available for existing clients and saved state.
-SETUP_VERSION = 2
+SETUP_VERSION = 3
 SETUP_STEPS = (
     ("company", "Company profile"),
-    ("organization", "Locations"),
+    ("organization", "Headquarters and branches"),
     ("departments", "Departments and teams"),
     ("positions", "Positions and reporting lines"),
-    ("permissions", "Permissions and access"),
-    ("forms", "Forms and processes"),
+    ("permissions", "Position responsibilities and access"),
+    ("forms", "Choose and adapt forms"),
     ("employees", "People and invitations"),
     ("finish", "Review and activate"),
     ("template", "Business template"),

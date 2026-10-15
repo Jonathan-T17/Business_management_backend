@@ -1,0 +1,76 @@
+# Run from the repository root with --env-file .env.staging -p smartbiz-staging.
+# Standalone file: it never imports .env.production or production volumes.
+x-app: &app
+  build:
+    context: ..
+    dockerfile: deployment/backend.Dockerfile
+  env_file: ../.env.staging
+  restart: unless-stopped
+  volumes: [staging_backups:/backups]
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:?Set the staging database name}
+      POSTGRES_USER: ${DB_USER:?Set the staging database user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set a unique staging database password}
+    volumes: [staging_postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes"]
+    volumes: [staging_redis:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  clamav:
+    image: ${CLAMAV_IMAGE:?Set a reviewed official ClamAV image reference}
+    restart: unless-stopped
+    mem_limit: 4g
+    volumes: [staging_signatures:/var/lib/clamav]
+    networks: [upload_scanning, scanner_updates]
+  backend:
+    <<: *app
+    command: gunicorn Business_management_backend.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60
+    # Only a same-host HTTPS reverse proxy should reach this listener.
+    ports: ["127.0.0.1:18000:8000"]
+    networks: [default, upload_scanning]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      clamav: {condition: service_started}
+  worker:
+    <<: *app
+    command: celery -A Business_management_backend.celery:app worker -l INFO
+    networks: [default, upload_scanning]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      clamav: {condition: service_started}
+  scheduler:
+    <<: *app
+    command: celery -A Business_management_backend.celery:app beat -l INFO --schedule /state/celerybeat-schedule
+    volumes: [staging_backups:/backups, staging_schedule:/state]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+networks:
+  upload_scanning:
+    internal: true
+  scanner_updates: {}
+volumes:
+  staging_postgres:
+  staging_redis:
+  staging_signatures:
+  staging_backups:
+  staging_schedule:

@@ -2,7 +2,7 @@ from django.db import transaction
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -24,6 +24,8 @@ from .permissions import (
     CanManageBranches, CanManageInvites)
 
 from .services import CompanyInviteService, BranchLifecycleService
+from .lifecycle import WorkspaceLifecycleThrottle, WorkspaceLifecycleInput, WorkspaceArchiveResult
+from drf_spectacular.utils import extend_schema
 
 from django.utils import timezone
 from rest_framework.permissions import AllowAny
@@ -49,7 +51,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
             return Company.objects.none()
 
         return Company.objects.filter(
-            pk=user.company_id
+            pk=user.company_id, archived_at__isnull=True
         )
 
     def get_permissions(self):
@@ -123,6 +125,17 @@ class CompanyViewSet(viewsets.ModelViewSet):
             "Companies cannot be permanently deleted through this endpoint. "
             "Deactivate the company instead."
         )
+
+    @extend_schema(request=WorkspaceLifecycleInput, responses=WorkspaceArchiveResult)
+    @action(detail=True, methods=["post"], url_path="archive", throttle_classes=[WorkspaceLifecycleThrottle])
+    def archive(self, request, pk=None):
+        from .lifecycle import WorkspaceLifecycleInput, WorkspaceLifecycleService
+        data = WorkspaceLifecycleInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        company = WorkspaceLifecycleService.archive(company=self.get_object(), actor=request.user,
+                    values=data.validated_data, request=request)
+        return Response({"message": "Workspace archived. Contact platform support for recovery.",
+                         "recovery_until": company.recovery_until})
 
     @action(
         detail=True,
@@ -265,7 +278,12 @@ class BranchViewSet(viewsets.ModelViewSet):
             obj=branch,
         )
 
+    @transaction.atomic
     def perform_update(self, serializer):
+        company = Company.objects.select_for_update().get(pk=serializer.instance.company_id)
+        serializer.instance = Branch.objects.select_for_update().get(pk=serializer.instance.pk)
+        if company.headquarters_id == serializer.instance.pk and serializer.validated_data.get("is_active") is False:
+            raise ValidationError("Choose another headquarters before deactivating this location.")
         branch = serializer.save()
 
         create_audit_log(
@@ -277,6 +295,13 @@ class BranchViewSet(viewsets.ModelViewSet):
             ),
             obj=branch,
         )
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        company = Company.objects.select_for_update().get(pk=instance.company_id)
+        if company.headquarters_id == instance.pk:
+            raise ValidationError("Choose another headquarters before deleting this location.")
+        instance.delete()
 
     @action(
         detail=True,
@@ -336,7 +361,7 @@ class CompanyInviteViewSet(viewsets.ModelViewSet):
         if not getattr(user, "company_id", None):
             return CompanyInvite.objects.none()
 
-        return (
+        queryset = (
             CompanyInvite.objects
             .select_related(
                 "company",
@@ -345,7 +370,13 @@ class CompanyInviteViewSet(viewsets.ModelViewSet):
             .filter(
                 company_id=user.company_id
             )
+            .order_by("-created_at", "-pk")
         )
+        bucket = self.request.query_params.get("bucket")
+        if self.action == "list" and bucket:
+            from .invitation_journey import filter_invitation_journey
+            return filter_invitation_journey(queryset, bucket)
+        return queryset
 
     def get_permissions(self):
         if self.action == "accept":

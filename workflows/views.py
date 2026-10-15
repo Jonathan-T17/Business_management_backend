@@ -27,6 +27,7 @@ from .permissions import (
 from .services import (
     WorkflowService,
 )
+from .runtime_service import WorkflowRuntimeService
 
 
 # ============================================================
@@ -132,26 +133,20 @@ class WorkflowInstanceViewSet(
             company=user.company
         )
 
-        recipient_ids = {user.id}
-        for permission in (
-            "APPROVE_REPORTS",
-            "APPROVE_REQUESTS",
-            "REVIEW_SUBMISSIONS",
-        ):
-            recipient_ids.update(
-                VisibilityService.delegated_user_ids(
-                    user=user,
-                    permission=permission,
-                )
-            )
-
         from core.position_scope import PositionScope
         from workflows.models import WorkflowStepRecipient
-        current = PositionScope.current_recipients(WorkflowStepRecipient.objects.filter(
-            step__workflow_instance__company=user.company,user_id__in=recipient_ids))
-        return queryset.filter(
-            Q(submitted_by=user) | Q(steps__recipients__id__in=current.values("pk"))
-        ).distinct()
+        recipients = WorkflowStepRecipient.objects.filter(
+            step__workflow_instance__company=user.company
+        )
+        current = PositionScope.current_recipients(recipients.filter(user=user))
+        visible = Q(submitted_by=user) | Q(steps__recipients__id__in=current.values("pk"))
+        for target_type, permission in WorkflowService.WORKFLOW_DELEGATION_PERMISSIONS.items():
+            delegated = PositionScope.current_recipients(recipients.filter(
+                user_id__in=VisibilityService.delegated_user_ids(user=user, permission=permission),
+                step__workflow_instance__workflow__target_type=target_type,
+            ))
+            visible |= Q(steps__recipients__id__in=delegated.values("pk"))
+        return queryset.filter(visible).distinct()
 
     @action(
         detail=True,
@@ -166,9 +161,10 @@ class WorkflowInstanceViewSet(
 
         instance = self.get_object()
 
-        WorkflowService.approve(
+        WorkflowRuntimeService.approve(
             instance=instance,
-            user=request.user,
+            actor=request.user,
+            request=request,
             note=request.data.get(
                 "note",
                 "",
@@ -196,9 +192,10 @@ class WorkflowInstanceViewSet(
 
         instance = self.get_object()
 
-        WorkflowService.reject(
+        WorkflowRuntimeService.reject(
             instance=instance,
-            user=request.user,
+            actor=request.user,
+            request=request,
             note=request.data.get(
                 "note",
                 "",
@@ -226,9 +223,10 @@ class WorkflowInstanceViewSet(
 
         instance = self.get_object()
 
-        WorkflowService.return_for_correction(
+        WorkflowRuntimeService.return_for_changes(
             instance=instance,
-            user=request.user,
+            actor=request.user,
+            request=request,
             note=request.data.get(
                 "note",
                 "",

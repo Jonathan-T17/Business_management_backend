@@ -22,7 +22,7 @@ class UserAdminSafetyTests(TestCase):
         self.client.force_authenticate(self.admin)
 
     def test_last_admin_cannot_self_deactivate(self):
-        response = self.client.post(f"/api/users/{self.admin.id}/deactivate/")
+        response = self.client.post(f"/api/v1/users/{self.admin.id}/deactivate/")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.admin.refresh_from_db()
@@ -30,7 +30,7 @@ class UserAdminSafetyTests(TestCase):
 
     def test_last_admin_cannot_demote_self(self):
         response = self.client.post(
-            f"/api/users/{self.admin.id}/role/",
+            f"/api/v1/users/{self.admin.id}/role/",
             {"role": Roles.MANAGER},
             format="json",
         )

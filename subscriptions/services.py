@@ -270,6 +270,37 @@ class SubscriptionCapacity:
 class SubscriptionLifecycleService:
     @classmethod
     @transaction.atomic
+    def renew(cls, *, subscription, actor, expires_at, reason, password, request=None):
+        from django.utils import timezone
+        actor = type(actor).objects.select_for_update().get(pk=actor.pk)
+        if not CapabilityService.has(actor, Capabilities.MANAGE_PLATFORM_SUBSCRIPTIONS):
+            raise PermissionDenied("Platform subscription authority is required.")
+        if not actor.check_password(password):
+            raise ValidationError({"password": "Your password could not be verified."})
+        reason = (reason or "").strip()
+        if not reason or len(reason) > 1000:
+            raise ValidationError({"reason": "Provide a reason of up to 1,000 characters."})
+        if expires_at is not None and expires_at <= timezone.now():
+            raise ValidationError({"expires_at": "Choose a future expiry date or no expiry."})
+        locked = type(subscription).objects.select_for_update().select_related("plan", "company").get(pk=subscription.pk)
+        if not locked.plan.is_active:
+            raise ValidationError({"plan": "Choose an active plan before renewing."})
+        SubscriptionCapacity.validate(locked.company, locked.plan)
+        old_expiry = locked.expires_at
+        old_active = locked.is_active
+        locked.expires_at = expires_at
+        locked.is_active = True
+        locked.renewed_at = timezone.now()
+        locked.save(update_fields=["expires_at", "is_active", "renewed_at", "updated_at"])
+        create_audit_log(user=actor, company=locked.company, request=request, action="UPDATE",
+            description="Subscription renewed and activated.", obj=locked,
+            metadata={"reason": reason, "old_is_active": old_active,
+                      "old_expires_at": old_expiry.isoformat() if old_expiry else None,
+                      "new_expires_at": expires_at.isoformat() if expires_at else None})
+        return locked
+
+    @classmethod
+    @transaction.atomic
     def change_plan(cls,*,subscription,new_plan,actor,reason,request=None):
         if not CapabilityService.has(actor,Capabilities.MANAGE_PLATFORM_SUBSCRIPTIONS):raise PermissionDenied("Platform subscription authority is required.")
         reason=(reason or "").strip()

@@ -5,6 +5,13 @@ Business
 __pycache__
 **/__pycache__
 *.pyc
+.review-deps
+media
+backups
+business
+.venv
+venv
+*.log
 .pytest_cache
 audit.log
 staticfiles

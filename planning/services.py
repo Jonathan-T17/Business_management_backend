@@ -23,6 +23,9 @@ class PlanningService:
             raise ValidationError(f"Cannot transition plan from {plan.status} to {to_status}.")
         plan.status = to_status
         plan.save(update_fields=["status", "updated_at"])
+        if to_status == "COMPLETED":
+            from records_management.finalizer import OfficialRecordFinalizer
+            OfficialRecordFinalizer.finalize(source=plan, actor=user, request=request)
         create_audit_log(user=user, company=plan.company, request=request, action="UPDATE", description=f"Plan transitioned to {to_status}.", obj=plan)
         return plan
 

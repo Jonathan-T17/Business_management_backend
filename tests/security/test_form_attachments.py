@@ -4,7 +4,7 @@ from rest_framework.test import APIClient
 from companies.models import Company
 from core.capabilities import Capabilities as C
 from organizations.models import UserCapabilityGrant
-from forms_engine.models import FormSubmission
+from forms_engine.models import FormSubmission, FormTemplate
 
 @pytest.mark.django_db
 def test_person_audience_and_attachment_boundaries(django_user_model, settings, tmp_path, monkeypatch):
@@ -66,8 +66,13 @@ def test_restricted_form_files_are_not_exposed(django_user_model, settings, tmp_
     assert response.status_code==201,response.data
     tid=response.data['id'];assert client.post(f'/api/v1/form-templates/{tid}/publish/').status_code==200
     response=client.post('/api/v1/form-submissions/',{'template':tid,'data':{'salary':'100'}},format='json')
-    assert response.status_code==201,response.data
-    sid=response.data['id'];url=f'/api/v1/form-submissions/{sid}/attachments/'
+    assert response.status_code==400,response.data
+    # Existing entries must remain protected even when a form is now hidden.
+    from forms_engine.versioning import FormTemplateVersionService
+    template=FormTemplate.objects.get(pk=tid)
+    submission=FormSubmission.objects.create(company=company,template=template,submitted_by=actor,
+        schema_snapshot=FormTemplateVersionService.field_data(template),data={'salary':'100'})
+    sid=submission.pk;url=f'/api/v1/form-submissions/{sid}/attachments/'
     response=client.post(url,{'file':SimpleUploadedFile('salary.txt',b'100')});assert response.status_code==201,response.data
     fid=response.data['id']
     assert client.get(url).data['files']==[]

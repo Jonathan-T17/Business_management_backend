@@ -276,6 +276,31 @@ class WorkflowInstanceSerializer(
     serializers.ModelSerializer
 ):
 
+    def to_representation(self, instance):
+        from .presentation import review_context
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        data.update(review_context(instance, request.user if request else None))
+        title = instance.workflow.name
+        # Identify the submitted form, without exposing its user-entered title
+        # or answers. The endpoint still controls participant visibility.
+        if (instance.workflow.target_type == "FORM_SUBMISSION" and request
+                and getattr(request.user, "company_id", None) == instance.company_id):
+            from forms_engine.models import FormSubmission
+            target = instance.content_object
+            if isinstance(target, FormSubmission) and target.company_id == instance.company_id:
+                snapshot = target.schema_snapshot or {}
+                form_name = snapshot.get("template_name") if isinstance(snapshot, dict) else None
+                if isinstance(form_name, str) and form_name.strip():
+                    title = form_name
+        data.update({
+            "instance_id": str(instance.pk),
+            "target_type": instance.workflow.target_type,
+            "target_id": instance.object_id,
+            "title": title,
+        })
+        return data
+
     workflow_name = serializers.CharField(
         source="workflow.name",
         read_only=True,

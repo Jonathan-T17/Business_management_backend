@@ -2,6 +2,11 @@ from django.db import transaction
 
 from rest_framework import serializers
 
+
+class LibraryUpdateSerializer(serializers.Serializer):
+    signature = serializers.CharField(max_length=64, min_length=64)
+    version = serializers.IntegerField(min_value=1)
+
 from .models import (
     FormTemplate,
     FormField,
@@ -53,8 +58,42 @@ class FormFieldSerializer(
 class FormTemplateSerializer(
     serializers.ModelSerializer
 ):
+    starter_code = serializers.SlugField(required=False, write_only=True)
 
+    library_update = serializers.SerializerMethodField()
+
+    def get_library_update(self, obj) -> dict:
+        from .catalogue import proposal
+        from .access import FormAccess
+        from core.capabilities import Capabilities
+        if not FormAccess.has(self.context['request'].user, Capabilities.MANAGE_FORM_TEMPLATES):
+            return {'available': False}
+        result = proposal(obj)
+        return {key:result[key] for key in ('available','signature','added_fields','preserved_fields','linked','baseline_missing','customized','changed_fields','removed_fields')} if result else {'available':False, 'linked':False}
+
+    review_preview = serializers.SerializerMethodField()
     allowed_actions = serializers.SerializerMethodField()
+
+    def get_review_preview(self, obj) -> dict:
+        from types import SimpleNamespace
+        from workflows.services import WorkflowService
+        actor = self.context['request'].user
+        if not obj.workflow_id:
+            return {'steps': [], 'warnings': [], 'description': 'Saved without an approval route.'}
+        steps = []
+        warnings = []
+        if not obj.workflow.is_active:
+            warnings.append('The review route is inactive. Ask your company administrator to activate it.')
+        for step in obj.workflow.steps.order_by('order'):
+            recipients = WorkflowService.resolve_recipients(step=step, company=obj.company,
+                submitted_by=actor, target=SimpleNamespace(branch_id=obj.branch_id or actor.branch_id, branch=obj.branch or actor.branch))
+            destination = step.recipient_position.title if step.recipient_type == 'POSITION' and step.recipient_position else step.name
+            steps.append({'name': step.name, 'destination': destination, 'available': bool(recipients)})
+            if not recipients:
+                warnings.append(f'{destination}: no active reviewer was found for your current reporting location. Confirm the reporting line before submitting.')
+        if not steps:
+            warnings.append('Add at least one review step before publishing.')
+        return {'steps': steps, 'warnings': warnings, 'description': 'Your submission follows these review steps in order. The final reviewer approves or rejects the request.'}
 
     def get_allowed_actions(self, obj) -> list[str]:
         from .access import FormAccess
@@ -98,8 +137,14 @@ class FormTemplateSerializer(
             "allow_drafts",
             "audience_roles",
             "audience_user_ids",
+            "audience_position_ids",
+            "audience_branch_ids", "entry_visibility", "share_confidential",
+            "source_starter",
+            "starter_code",
             "supersedes",
             "allowed_actions",
+            "review_preview",
+            "library_update",
             "is_active",
             "lifecycle_status",
 
@@ -117,6 +162,7 @@ class FormTemplateSerializer(
             "supersedes",
             "is_active",
             "lifecycle_status",
+            "audience_branch_ids", "entry_visibility", "share_confidential",
             "version",
             "created_at",
             "updated_at",
@@ -222,8 +268,25 @@ class FormTemplateSerializer(
 class FormSubmissionSerializer(
     serializers.ModelSerializer
 ):
+    client_request_id = serializers.UUIDField(required=False, write_only=True)
 
     allowed_actions = serializers.SerializerMethodField()
+    return_note = serializers.SerializerMethodField()
+
+    def get_return_note(self, obj) -> str | None:
+        request = self.context.get("request")
+        if obj.status != "RETURNED" or not request or obj.submitted_by_id != request.user.pk:
+            return None
+        from django.contrib.contenttypes.models import ContentType
+        from workflows.models import WorkflowInstance
+        instance = WorkflowInstance.objects.filter(
+            company_id=obj.company_id,
+            content_type=ContentType.objects.get_for_model(obj),
+            object_id=str(obj.pk),
+        ).order_by("-started_at", "-pk").first()
+        if not instance or instance.status != "RETURNED":
+            return None
+        return instance.action_logs.filter(action="RETURNED").order_by("-created_at", "-pk").values_list("note", flat=True).first()
 
     def get_allowed_actions(self, obj) -> list[str]:
         from .access import FormAccess
@@ -269,7 +332,9 @@ class FormSubmissionSerializer(
         model = FormSubmission
 
         fields = (
+            "client_request_id",
             "allowed_actions",
+            "return_note",
             "id",
 
             "company",
@@ -360,6 +425,9 @@ class FormSubmissionSerializer(
         instance,
         validated_data,
     ):
+        validated_data.pop('client_request_id', None)
+        if 'branch' in validated_data and getattr(validated_data['branch'], 'pk', None) != instance.branch_id:
+            raise serializers.ValidationError({'branch': 'The filing branch is fixed after this entry is created. Start a new entry for another branch.'})
 
         instance = FormSubmission.objects.select_for_update().get(pk=instance.pk)
         if hasattr(instance,'business_request'):
@@ -391,6 +459,8 @@ class FormSubmissionSerializer(
         data = FormSubmissionDisclosurePolicy.restore_masked_answers(
             submission=instance, user=self.context['request'].user, data=data,
         )
+        from .defaults import apply_defaults
+        data = apply_defaults(instance.schema_snapshot, self.context['request'].user, data, existing=instance.data, branch=instance.branch)
         validated_data['data'] = data
 
         FormSubmissionService.validate_data(

@@ -21,6 +21,13 @@ from core.roles import Roles
 from core.visibility import VisibilityService
 
 from .models import BusinessRequest
+from drf_spectacular.utils import extend_schema
+from rest_framework import serializers
+from documents.serializers import AttachmentSerializer
+
+
+class RequestFileUploadSerializer(serializers.Serializer):
+    file = serializers.FileField()
 
 from .serializers import (
     BusinessRequestSerializer,
@@ -38,6 +45,8 @@ from .permissions import (
 class BusinessRequestViewSet(
     viewsets.ModelViewSet
 ):
+
+    search_fields = ['title', 'request_number']
 
     serializer_class = (
         BusinessRequestSerializer
@@ -68,6 +77,23 @@ class BusinessRequestViewSet(
             user=user,
             queryset=queryset,
         )
+
+    @extend_schema(methods=['GET'], responses=AttachmentSerializer(many=True))
+    @extend_schema(methods=['POST'], request=RequestFileUploadSerializer, responses={201:AttachmentSerializer})
+    @action(detail=True, methods=['get', 'post'], url_path='attachments', pagination_class=None)
+    def attachments(self, request, pk=None):
+        from django.contrib.contenttypes.models import ContentType
+        from documents.models import Attachment
+        from documents.serializers import AttachmentSerializer
+        obj = self.get_object()
+        content_type = ContentType.objects.get_for_model(obj)
+        if request.method == 'POST':
+            serializer = AttachmentSerializer(data={'content_type': content_type.pk, 'object_id': str(obj.pk), 'file': request.FILES.get('file')}, context={'request': request})
+            serializer.is_valid(raise_exception=True)
+            attachment = serializer.save()
+            return Response(AttachmentSerializer(attachment, context={'request':request}).data, status=201)
+        files = Attachment.objects.filter(company=obj.company, content_type=content_type, object_id=str(obj.pk), is_active=True).order_by('created_at','pk')
+        return Response(AttachmentSerializer(files, many=True, context={'request':request}).data)
 
     def perform_destroy(
         self,

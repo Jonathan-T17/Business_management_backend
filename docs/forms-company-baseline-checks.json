@@ -1,0 +1,1048 @@
+{
+  "scope": "Read-only template configuration for the signed-in company; no answers, users, files or credentials",
+  "company": "Business Group Ltd",
+  "forms": [
+    {
+      "name": "Attendance correction",
+      "code": "attendance-correction",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "attendance-correction",
+      "baseline_present": true,
+      "baseline_matches_library": true,
+      "fields_different_from_library": [],
+      "library_fields_missing_from_company": [],
+      "audience": {
+        "roles": [],
+        "people_count": 0,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": false
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": true,
+      "fields": [
+        {
+          "key": "recorded_by",
+          "type": "TEXT",
+          "active": true,
+          "classification": "PERSONAL",
+          "default_source": "USER_NAME",
+          "minimum": null
+        },
+        {
+          "key": "company_name",
+          "type": "TEXT",
+          "active": true,
+          "classification": "PERSONAL",
+          "default_source": "COMPANY_NAME",
+          "minimum": null
+        },
+        {
+          "key": "work_location",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": "BRANCH_NAME",
+          "minimum": null
+        },
+        {
+          "key": "date",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": "TODAY",
+          "minimum": null
+        },
+        {
+          "key": "correction",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "reason",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "Branch operations summary",
+      "code": "branch-summary",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "branch-summary",
+      "baseline_present": false,
+      "baseline_matches_library": false,
+      "fields_different_from_library": [
+        "period_start",
+        "period_end",
+        "results",
+        "issues",
+        "support"
+      ],
+      "library_fields_missing_from_company": [
+        "recorded_by",
+        "company_name",
+        "recorded_on",
+        "work_location"
+      ],
+      "audience": {
+        "roles": [],
+        "people_count": 0,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": false
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "period_start",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "period_end",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "results",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "issues",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "support",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "Confirm materials received",
+      "code": "material-receipt",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "material-receipt",
+      "baseline_present": true,
+      "baseline_matches_library": true,
+      "fields_different_from_library": [],
+      "library_fields_missing_from_company": [],
+      "audience": {
+        "roles": [],
+        "people_count": 0,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": false
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "recorded_by",
+          "type": "TEXT",
+          "active": true,
+          "classification": "PERSONAL",
+          "default_source": "USER_NAME",
+          "minimum": null
+        },
+        {
+          "key": "company_name",
+          "type": "TEXT",
+          "active": true,
+          "classification": "PERSONAL",
+          "default_source": "COMPANY_NAME",
+          "minimum": null
+        },
+        {
+          "key": "work_location",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": "BRANCH_NAME",
+          "minimum": null
+        },
+        {
+          "key": "request_reference",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "delivery_reference",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "received_date",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": "TODAY",
+          "minimum": null
+        },
+        {
+          "key": "items",
+          "type": "ITEM_LIST",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "discrepancies",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "condition",
+          "type": "SELECT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "Daily collections summary",
+      "code": "collection-summary",
+      "version": 2,
+      "state": "PUBLISHED",
+      "active": true,
+      "source_starter": "collection-summary",
+      "baseline_present": true,
+      "baseline_matches_library": true,
+      "fields_different_from_library": [
+        "date",
+        "total",
+        "currency",
+        "references",
+        "differences"
+      ],
+      "library_fields_missing_from_company": [],
+      "audience": {
+        "roles": [],
+        "people_count": 0,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": false
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "date",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "total",
+          "type": "DECIMAL",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "currency",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "references",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "differences",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "recorded_by",
+          "type": "TEXT",
+          "active": true,
+          "classification": "PERSONAL",
+          "default_source": "USER_NAME",
+          "minimum": null
+        },
+        {
+          "key": "company_name",
+          "type": "TEXT",
+          "active": true,
+          "classification": "PERSONAL",
+          "default_source": "COMPANY_NAME",
+          "minimum": null
+        },
+        {
+          "key": "work_location",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": "BRANCH_NAME",
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "Daily report",
+      "code": "daily-report",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "daily-report",
+      "baseline_present": true,
+      "baseline_matches_library": true,
+      "fields_different_from_library": [],
+      "library_fields_missing_from_company": [],
+      "audience": {
+        "roles": [],
+        "people_count": 0,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": false
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "recorded_by",
+          "type": "TEXT",
+          "active": true,
+          "classification": "PERSONAL",
+          "default_source": "USER_NAME",
+          "minimum": null
+        },
+        {
+          "key": "company_name",
+          "type": "TEXT",
+          "active": true,
+          "classification": "PERSONAL",
+          "default_source": "COMPANY_NAME",
+          "minimum": null
+        },
+        {
+          "key": "work_location",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": "BRANCH_NAME",
+          "minimum": null
+        },
+        {
+          "key": "report_date",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": "TODAY",
+          "minimum": null
+        },
+        {
+          "key": "work_completed",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "blockers",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "next_steps",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "Employee service request",
+      "code": "employee-service",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "employee-service",
+      "baseline_present": false,
+      "baseline_matches_library": false,
+      "fields_different_from_library": [
+        "service",
+        "details",
+        "needed_by"
+      ],
+      "library_fields_missing_from_company": [
+        "recorded_by",
+        "company_name",
+        "recorded_on",
+        "work_location"
+      ],
+      "audience": {
+        "roles": [],
+        "people_count": 0,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": false
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "service",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "details",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "needed_by",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "Equipment issue and return",
+      "code": "equipment-issue",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "equipment-issue",
+      "baseline_present": false,
+      "baseline_matches_library": false,
+      "fields_different_from_library": [
+        "date",
+        "action",
+        "equipment",
+        "holder",
+        "condition"
+      ],
+      "library_fields_missing_from_company": [
+        "recorded_by",
+        "company_name",
+        "work_location"
+      ],
+      "audience": {
+        "roles": [],
+        "people_count": 0,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": false
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "date",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "action",
+          "type": "SELECT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "equipment",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "holder",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "condition",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "Expense approval request",
+      "code": "expense-request",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "expense-request",
+      "baseline_present": false,
+      "baseline_matches_library": false,
+      "fields_different_from_library": [
+        "purpose",
+        "amount",
+        "currency",
+        "needed_by",
+        "details"
+      ],
+      "library_fields_missing_from_company": [
+        "recorded_by",
+        "company_name",
+        "recorded_on",
+        "work_location"
+      ],
+      "audience": {
+        "roles": [],
+        "people_count": 0,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": false
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "purpose",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "amount",
+          "type": "DECIMAL",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "currency",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "needed_by",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "details",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "Goods or materials collection",
+      "code": "collection-record",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "",
+      "baseline_present": false,
+      "baseline_matches_library": null,
+      "fields_different_from_library": null,
+      "library_fields_missing_from_company": null,
+      "audience": {
+        "roles": [],
+        "people_count": 0,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": true
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "collection_date",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "item",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "quantity",
+          "type": "DECIMAL",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "unit",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "notes",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "TEST - Food Production daily report",
+      "code": "browser-journey-20261001",
+      "version": 2,
+      "state": "PUBLISHED",
+      "active": true,
+      "source_starter": "",
+      "baseline_present": false,
+      "baseline_matches_library": null,
+      "fields_different_from_library": null,
+      "library_fields_missing_from_company": null,
+      "audience": {
+        "roles": [],
+        "people_count": 0,
+        "positions_count": 0,
+        "branches_count": 1,
+        "has_fixed_location": false
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": true,
+      "fields": [
+        {
+          "key": "work_completed",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "blockers",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "TEST - Materials Dispatch",
+      "code": "test-connected-material-dispatch",
+      "version": 3,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "material-dispatch",
+      "baseline_present": false,
+      "baseline_matches_library": false,
+      "fields_different_from_library": [
+        "request_reference",
+        "dispatch_date",
+        "destination",
+        "items",
+        "delivery_reference",
+        "notes"
+      ],
+      "library_fields_missing_from_company": [
+        "recorded_by",
+        "company_name",
+        "work_location"
+      ],
+      "audience": {
+        "roles": [],
+        "people_count": 1,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": false
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "request_reference",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "dispatch_date",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "destination",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "items",
+          "type": "ITEM_LIST",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "delivery_reference",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "notes",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "TEST - Materials Receipt",
+      "code": "test-connected-material-receipt",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "material-receipt",
+      "baseline_present": false,
+      "baseline_matches_library": false,
+      "fields_different_from_library": [
+        "request_reference",
+        "delivery_reference",
+        "received_date",
+        "items",
+        "discrepancies",
+        "condition"
+      ],
+      "library_fields_missing_from_company": [
+        "recorded_by",
+        "company_name",
+        "work_location"
+      ],
+      "audience": {
+        "roles": [],
+        "people_count": 1,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": true
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "request_reference",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "delivery_reference",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "received_date",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "items",
+          "type": "ITEM_LIST",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "discrepancies",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "condition",
+          "type": "SELECT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "TEST - Materials Request",
+      "code": "test-connected-material-request",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "material-request",
+      "baseline_present": false,
+      "baseline_matches_library": false,
+      "fields_different_from_library": [
+        "items",
+        "purpose",
+        "needed_by",
+        "delivery_location",
+        "priority"
+      ],
+      "library_fields_missing_from_company": [
+        "recorded_by",
+        "company_name",
+        "recorded_on",
+        "work_location"
+      ],
+      "audience": {
+        "roles": [],
+        "people_count": 1,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": true
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": true,
+      "fields": [
+        {
+          "key": "items",
+          "type": "ITEM_LIST",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "purpose",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "needed_by",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "delivery_location",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "priority",
+          "type": "SELECT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    },
+    {
+      "name": "TEST - Materials Return",
+      "code": "test-connected-material-return",
+      "version": 2,
+      "state": "DRAFT",
+      "active": false,
+      "source_starter": "material-return",
+      "baseline_present": false,
+      "baseline_matches_library": false,
+      "fields_different_from_library": [
+        "original_reference",
+        "return_date",
+        "items",
+        "reason",
+        "destination"
+      ],
+      "library_fields_missing_from_company": [
+        "recorded_by",
+        "company_name",
+        "work_location"
+      ],
+      "audience": {
+        "roles": [],
+        "people_count": 1,
+        "positions_count": 0,
+        "branches_count": 0,
+        "has_fixed_location": true
+      },
+      "entry_visibility": "STANDARD",
+      "share_confidential": false,
+      "has_workflow": false,
+      "fields": [
+        {
+          "key": "original_reference",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "return_date",
+          "type": "DATE",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "items",
+          "type": "ITEM_LIST",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "reason",
+          "type": "LONG_TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        },
+        {
+          "key": "destination",
+          "type": "TEXT",
+          "active": true,
+          "classification": "NORMAL",
+          "default_source": null,
+          "minimum": null
+        }
+      ]
+    }
+  ]
+}

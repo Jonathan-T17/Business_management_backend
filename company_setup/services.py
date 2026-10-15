@@ -31,6 +31,13 @@ class SetupStateService:
 
         if step == "finish":
             return cls.finish(company=company, actor=actor, request=request)
+        if step in REQUIRED_STEPS:
+            completed = cls.required_completed_steps(company)
+            for previous, label in SETUP_STEPS:
+                if previous == step:
+                    break
+                if previous in REQUIRED_STEPS and previous not in completed:
+                    raise ValidationError({"step": f"Complete {label.lower()} before continuing to this step."})
         if step in REQUIRED_STEPS and step not in SetupReadinessService.configured_steps(company):
             raise ValidationError({"step": "Save the required configuration before completing this step."})
         state = cls.state_for(company)
@@ -48,6 +55,10 @@ class SetupStateService:
             description=f"Company setup step completed: {step}.", obj=state,
         )
         return state
+
+    @staticmethod
+    def required_completed_steps(company):
+        return SetupReadinessService.completed_steps(company)
 
     @classmethod
     @transaction.atomic

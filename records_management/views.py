@@ -18,6 +18,7 @@ from .services import OfficialRecordPDFService, OfficialRecordService
 
 class OfficialRecordViewSet(viewsets.ReadOnlyModelViewSet):
 	permission_classes = [IsAuthenticated]
+	ordering = ("-issued_at", "-id")
 
 	def get_serializer_class(self):
 		return (

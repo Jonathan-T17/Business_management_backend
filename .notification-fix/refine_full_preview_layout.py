@@ -1,0 +1,2 @@
+from pathlib import Path
+p=Path('.notification-fix/approved-form-journey/src/components/forms/FormTemplateLibrary.tsx');s=p.read_text(encoding='utf-8').replace('className="grid gap-4 md:grid-cols-2"','className="grid items-start gap-4 md:grid-cols-2"').replace('className="sb-form-choice"','className="sb-form-choice md:has-[details[open]]:col-span-2"').replace('<div className="mt-3 rounded-xl bg-[var(--surface-soft)] p-4">','<div className="mx-auto mt-3 max-w-3xl rounded-xl bg-[var(--surface-soft)] p-4">');p.write_text(s,encoding='utf-8')

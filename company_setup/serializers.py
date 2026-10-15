@@ -80,6 +80,15 @@ class RequestTypeDefinitionSerializer(CompanyOwnedConfigurationSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        if 'code' in attrs:
+            duplicates = RequestTypeDefinition.objects.filter(company=self.context['request'].user.company, code__iexact=attrs['code'])
+            if self.instance:
+                duplicates = duplicates.exclude(pk=self.instance.pk)
+            if duplicates.exists():
+                raise serializers.ValidationError({'code': 'This reference code is already used. Choose another code.'})
+        workflow = attrs.get('workflow')
+        if workflow and (workflow.target_type != 'REQUEST' or not workflow.is_active):
+            raise serializers.ValidationError({'workflow': 'Choose an active approval route for requests.'})
         for enabled, required in (
             ("amount_enabled", "amount_required"),
             ("quantity_enabled", "quantity_required"),
@@ -95,7 +104,36 @@ class RequestTypeDefinitionSerializer(CompanyOwnedConfigurationSerializer):
         return attrs
 
 
+class RequestTypeChoiceSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+    sensitive = serializers.BooleanField()
+    amount_enabled = serializers.BooleanField()
+    amount_required = serializers.BooleanField()
+    quantity_enabled = serializers.BooleanField()
+    quantity_required = serializers.BooleanField()
+    needed_by_enabled = serializers.BooleanField()
+    needed_by_required = serializers.BooleanField()
+    attachments_allowed = serializers.BooleanField()
+    attachments_required = serializers.BooleanField()
+    form_template_id = serializers.UUIDField(allow_null=True)
+
+
+class RequestApprovalChoiceSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+
+
 class FieldActivityTemplateSerializer(CompanyOwnedConfigurationSerializer):
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        for field in ('require_location', 'require_photo', 'require_signature', 'require_notes'):
+            if attrs.get(field) and not getattr(self.instance, field, False):
+                raise serializers.ValidationError({field: 'Use required fields in a published field form. This legacy flag is not enforced by stop completion.'})
+        return attrs
+
     class Meta:
         model = FieldActivityTemplate
         fields = (
@@ -152,6 +190,30 @@ class ReportingProcessSerializer(serializers.ModelSerializer):
 
 
 class OfficialRecordPolicySerializer(serializers.ModelSerializer):
+    SOURCE_STATUSES = {
+        'REPORT': ('APPROVED',),
+        'REQUEST': ('APPROVED', 'FULFILLED'),
+        'FORM_SUBMISSION': ('APPROVED',),
+        'PLAN': ('COMPLETED',),
+        'FIELD_SUMMARY': ('COMPLETED',),
+    }
+
+    def validate_prefix(self, value):
+        value = value.strip().upper()
+        if not value or not value.replace('-', '').isalnum():
+            raise serializers.ValidationError('Use letters, numbers and hyphens for the record prefix.')
+        return value
+
+    def validate(self, attrs):
+        current = self.instance
+        source = attrs.get('source_type', getattr(current, 'source_type', None))
+        status = attrs.get('trigger_status', getattr(current, 'trigger_status', None))
+        active = attrs.get('is_active', getattr(current, 'is_active', True))
+        automatic = attrs.get('automatic_issue', getattr(current, 'automatic_issue', False))
+        if active and automatic and status not in self.SOURCE_STATUSES.get(source, ()):
+            raise serializers.ValidationError({'trigger_status': 'Choose a supported issuance status for this source type.'})
+        return attrs
+
     class Meta:
         model = OfficialRecordPolicy
         fields = (

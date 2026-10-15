@@ -4,6 +4,8 @@ from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
+from .serializers import RequestApprovalChoiceSerializer
 
 from core.capabilities import Capabilities
 from security.services import create_audit_log
@@ -74,6 +76,12 @@ class ActivatableConfigurationViewSet(CompanyConfigurationViewSet):
 
 
 class RequestTypeViewSet(ActivatableConfigurationViewSet):
+    @extend_schema(responses=RequestApprovalChoiceSerializer(many=True))
+    @action(detail=False, methods=['get'], url_path='approval-choices', pagination_class=None)
+    def approval_choices(self, request):
+        from workflows.models import WorkflowDefinition
+        return Response(list(WorkflowDefinition.objects.filter(company=request.user.company, target_type='REQUEST', is_active=True).order_by('name','id').values('id','name')))
+
     queryset = RequestTypeDefinition.objects.all()
     serializer_class = RequestTypeDefinitionSerializer
 

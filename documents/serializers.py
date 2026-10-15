@@ -2,6 +2,7 @@ from django.contrib.contenttypes.models import (
     ContentType,
 )
 
+from django.db import transaction
 from rest_framework import serializers
 
 from .models import (
@@ -30,7 +31,7 @@ class AttachmentSerializer(
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        if instance.content_type.app_label == 'forms_engine' and instance.content_type.model == 'formsubmission':
+        if (instance.content_type.app_label, instance.content_type.model) in {('forms_engine','formsubmission'), ('requests_app','businessrequest')}:
             data['file'] = None
             data['file_url'] = None
         return data
@@ -324,20 +325,10 @@ class DocumentSerializer(
     initial_file = (
         serializers.FileField(
             write_only=True,
-            required=True,
+            required=False,
         )
     )
 
-    def validate(self, attrs):
-        category = attrs.get("category")
-        request = self.context["request"]
-        if category and category.company_id != request.user.company_id:
-            raise serializers.ValidationError({
-                "category": "Category belongs to another company.",
-            })
-        if category and "visibility" not in attrs and not self.instance:
-            attrs["visibility"] = category.default_visibility
-        return attrs
 
     class Meta:
         model = Document
@@ -396,112 +387,52 @@ class DocumentSerializer(
             "updated_at",
         )
 
-    def validate(
-        self,
-        attrs,
-    ):
+    def validate(self, attrs):
+        user = self.context["request"].user
+        def effective(field):
+            return attrs.get(field, getattr(self.instance, field, None))
 
-        request = self.context[
-            "request"
-        ]
+        errors = {}
+        if not self.instance and not attrs.get("initial_file"):
+            errors["initial_file"] = "Choose a file to upload."
+        for field in ("category", "owner", "branch", "department", "team", "project"):
+            value = effective(field)
+            if value and value.company_id != user.company_id:
+                errors[field] = "Choose an item from your company."
 
-        company = (
-            request.user.company
-        )
+        category = effective("category")
+        if not self.instance:
+            if category and "visibility" not in attrs:
+                attrs["visibility"] = category.default_visibility
+            if not attrs.get("owner"):
+                attrs["owner"] = user
 
-        branch = attrs.get(
-            "branch"
-        )
+        visibility = attrs.get("visibility", getattr(self.instance, "visibility", "PRIVATE"))
+        target = {"BRANCH": "branch", "DEPARTMENT": "department", "TEAM": "team"}.get(visibility)
+        if target and not effective(target):
+            errors[target] = f"Choose a {target} for this visibility."
+        if visibility == "PRIVATE" and not effective("owner"):
+            errors["owner"] = "A private document needs an owner."
 
-        department = attrs.get(
-            "department"
-        )
-
-        team = attrs.get(
-            "team"
-        )
-
-        project = attrs.get(
-            "project"
-        )
-
-        initial_file = attrs.get(
-            "initial_file"
-        )
-
-        if initial_file:
-            validate_uploaded_file(
-                initial_file,
-                max_size=
-                    MAX_DOCUMENT_SIZE,
-            )
-
-        if (
-            branch
-            and branch.company_id
-            != company.id
-        ):
-            raise serializers.ValidationError({
-                "branch":
-                    "Branch belongs to another company."
-            })
-
-        if (
-            department
-            and department.company_id
-            != company.id
-        ):
-            raise serializers.ValidationError({
-                "department":
-                    "Department belongs to another company."
-            })
-
-        if (
-            team
-            and team.company_id
-            != company.id
-        ):
-            raise serializers.ValidationError({
-                "team":
-                    "Team belongs to another company."
-            })
-
-        if (
-            project
-            and project.company_id
-            != company.id
-        ):
-            raise serializers.ValidationError({
-                "project":
-                    "Project belongs to another company."
-            })
-
-        if (
-            department
-            and branch
-            and department.branch_id
-            != branch.id
-        ):
-            raise serializers.ValidationError({
-                "department":
-                    "Department must belong "
-                    "to the selected branch."
-            })
-
-        if (
-            team
-            and department
-            and team.department_id
-            != department.id
-        ):
-            raise serializers.ValidationError({
-                "team":
-                    "Team must belong to "
-                    "the selected department."
-            })
-
+        branch, department, team = (effective(name) for name in ("branch", "department", "team"))
+        if department and branch and department.branch_id != branch.id:
+            errors["department"] = "Choose a department in the selected branch."
+        if team and department and team.department_id != department.id:
+            errors["team"] = "Choose a team in the selected department."
+        if team and branch and team.department.branch_id != branch.id:
+            errors["team"] = "Choose a team in the selected branch."
+        effective_date, expiry_date = effective("effective_date"), effective("expiry_date")
+        if effective_date and expiry_date and expiry_date < effective_date:
+            errors["expiry_date"] = "Expiry date must be on or after the effective date."
+        if self.instance and "initial_file" in attrs:
+            errors["initial_file"] = "Use Add version to replace a document file."
+        if errors:
+            raise serializers.ValidationError(errors)
+        if attrs.get("initial_file"):
+            validate_uploaded_file(attrs["initial_file"], max_size=MAX_DOCUMENT_SIZE)
         return attrs
 
+    @transaction.atomic
     def create(
         self,
         validated_data,

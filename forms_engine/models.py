@@ -106,6 +106,13 @@ class FormTemplate(models.Model):
     supersedes = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="revisions")
     audience_roles = models.JSONField(default=list, blank=True)
     audience_user_ids = models.JSONField(default=list, blank=True)
+    audience_position_ids = models.JSONField(default=list, blank=True)
+    audience_branch_ids = models.JSONField(default=list, blank=True)
+    entry_visibility = models.CharField(max_length=20, default='STANDARD', choices=[('STANDARD', 'Existing work permissions'), ('AUDIENCE', 'Published audience')])
+    share_confidential = models.BooleanField(default=False)
+    workspace_deleted = models.BooleanField(default=False)
+    source_starter = models.CharField(max_length=100, blank=True, editable=False)
+    source_starter_snapshot = models.JSONField(default=dict, blank=True, editable=False)
 
     version = models.PositiveIntegerField(
         default=1,
@@ -171,7 +178,7 @@ class FormTemplate(models.Model):
         if self.pk:
             old=type(self).objects.filter(pk=self.pk).first()
             if old and (old.lifecycle_status != 'DRAFT' or old.submissions.exists()):
-                protected=('company_id','code','name','description','category','branch_id','department_id','team_id','workflow_id','version','allow_drafts','audience_roles','audience_user_ids','supersedes_id')
+                protected=('company_id','code','name','description','category','branch_id','department_id','team_id','workflow_id','version','allow_drafts','audience_roles','audience_user_ids','audience_position_ids','audience_branch_ids','entry_visibility','share_confidential','source_starter','source_starter_snapshot','supersedes_id')
                 if any(getattr(old,key)!=getattr(self,key) for key in protected):
                     raise ValidationError('Published or used forms are immutable. Create a draft revision.')
         super().save(*args,**kwargs)
@@ -209,6 +216,7 @@ class FormField(models.Model):
         ("PHONE", "Phone"),
 
         ("LOCATION", "Location"),
+        ("ITEM_LIST", "Items and quantities"),
     )
 
     template = models.ForeignKey(
@@ -339,6 +347,7 @@ class FormSubmission(models.Model):
         default=uuid.uuid4,
         editable=False,
     )
+    client_request_id = models.UUIDField(null=True, blank=True, editable=False)
 
     company = models.ForeignKey(
         "companies.Company",
@@ -497,7 +506,8 @@ class FormSubmission(models.Model):
                     "reference_number",
                 ],
                 name="unique_company_form_submission_reference",
-            )
+            ),
+            models.UniqueConstraint(fields=['company', 'submitted_by', 'client_request_id'], name='unique_form_draft_request'),
         ]
 
     def __str__(self):
@@ -529,3 +539,23 @@ class FormStarter(models.Model):
         self.field_schema=list(fields.validated_data)
 
     def __str__(self): return self.name
+
+
+class MaterialJourney(models.Model):
+    submission = models.OneToOneField(FormSubmission, on_delete=models.PROTECT, related_name='material_journey')
+    items = models.JSONField(default=list)
+    approved = models.JSONField(default=dict)
+
+
+class MaterialMovement(models.Model):
+    journey = models.ForeignKey(MaterialJourney, on_delete=models.PROTECT, related_name='movements')
+    stage = models.CharField(max_length=20, choices=[('DISPATCH','Dispatch'),('RECEIPT','Receipt'),('RETURN','Return')])
+    related_movement = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='confirmations')
+    reference = models.UUIDField(default=uuid.uuid4, unique=True)
+    quantities = models.JSONField(default=dict)
+    note = models.TextField(blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    template = models.ForeignKey(FormTemplate, on_delete=models.PROTECT)
+    schema_snapshot = models.JSONField(default=dict)
+    answers = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)

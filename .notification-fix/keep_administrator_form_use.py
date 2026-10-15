@@ -1,0 +1,2 @@
+from pathlib import Path
+p=Path('.notification-fix/simple-forms/src/components/forms/FormDetail.tsx');s=p.read_text(encoding='utf-8');s=s.replace('<div className="flex flex-wrap gap-3">{allowed.includes("UPDATE")','<div className="flex flex-wrap gap-3">{!editing&&template.lifecycle_status==="PUBLISHED"&&allowed.includes("START")&&<Link className="sb-primary-link" href={`/forms/templates/${id}`}>Fill in form</Link>}{allowed.includes("UPDATE")');p.write_text(s,encoding='utf-8')

@@ -71,7 +71,7 @@ def test_employee_notes_reject_cross_company_and_platform_input(django_user_mode
 @pytest.mark.parametrize('all_sessions', [False, True])
 def test_platform_session_termination_blacklists_tokens(django_user_model, all_sessions):
     company = Company.objects.create(name='Session boundary')
-    actor = django_user_model.objects.create_user(email='platform@boundary.test', role='SUPERUSER', is_active=True)
+    actor = django_user_model.objects.create_superuser(email='platform@boundary.test', full_name='Security operator', password='test-password')
     user = django_user_model.objects.create_user(email='session@boundary.test', company=company, is_active=True)
     tokens = [RefreshToken.for_user(user) for _ in range(2)]
     sessions = [ActiveSession.objects.create(user=user, company=company,

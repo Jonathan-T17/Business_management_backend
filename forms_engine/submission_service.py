@@ -40,6 +40,8 @@ class FormSubmissionLifecycleService:
             {
                 "key": field.key,
                 "label": field.label,
+                "help_text": field.help_text,
+                "placeholder": field.placeholder,
                 "field_type": field.field_type,
                 "required": field.required,
                 "options": deepcopy(field.options),
@@ -49,6 +51,7 @@ class FormSubmissionLifecycleService:
             }
             for field in template.fields.filter(is_active=True).order_by("order", "id")
         ]
+        from .defaults import initial_values
         submission = FormSubmission.objects.create(
             company=actor.company,
             template=template,
@@ -64,7 +67,7 @@ class FormSubmissionLifecycleService:
             status="DRAFT",
             template_version=template.version,
             schema_snapshot=schema,
-            data={},
+            data=initial_values(schema, actor, date=obligation.reporting_date if obligation else None),
         )
         if obligation:
             obligation.submission = submission
@@ -84,7 +87,8 @@ class FormSubmissionLifecycleService:
         unknown = set(data) - allowed
         if unknown:
             raise ValidationError({"data": f"Unknown fields: {', '.join(sorted(unknown))}."})
-        submission.data = data
+        from .defaults import apply_defaults
+        submission.data = apply_defaults(submission.schema_snapshot, actor, data, existing=submission.data, branch=submission.branch)
         submission.save(update_fields=["data", "updated_at"])
         return submission
 
@@ -121,6 +125,8 @@ class FormSubmissionWorkflowAdapter:
 
     @staticmethod
     def on_submitted(*, target, actor, workflow_instance, request=None):
+        from .materials import initialize
+        initialize(target)
         target.status = "SUBMITTED"
         target.submitted_at = timezone.now()
         target.save(update_fields=["status", "submitted_at", "updated_at"])
@@ -130,9 +136,13 @@ class FormSubmissionWorkflowAdapter:
 
     @staticmethod
     def on_approved(*, target, actor, workflow_instance, request=None):
+        from .materials import decision
+        decision(target)
         target.status = "APPROVED"
         target.approved_at = timezone.now()
         target.save(update_fields=["status", "approved_at", "updated_at"])
+        from reporting_schedules.services import ReportingObligationStateService
+        ReportingObligationStateService.mark_decision(submission=target, outcome="APPROVED")
         from records_management.finalizer import OfficialRecordFinalizer
         OfficialRecordFinalizer.finalize(source=target, actor=actor, request=request)
 
@@ -140,8 +150,12 @@ class FormSubmissionWorkflowAdapter:
     def on_rejected(*, target, actor, workflow_instance, request=None):
         target.status = "REJECTED"
         target.save(update_fields=["status", "updated_at"])
+        from reporting_schedules.services import ReportingObligationStateService
+        ReportingObligationStateService.mark_decision(submission=target, outcome="REJECTED")
 
     @staticmethod
     def on_returned(*, target, actor, workflow_instance, request=None):
         target.status = "RETURNED"
         target.save(update_fields=["status", "updated_at"])
+        from reporting_schedules.services import ReportingObligationStateService
+        ReportingObligationStateService.mark_decision(submission=target, outcome="RETURNED")

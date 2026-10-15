@@ -1,5 +1,7 @@
 # Production runbook
 
+For a separate synthetic-data environment, use [STAGING.md](STAGING.md) and the standalone staging Compose file. Do not overlay it on production.
+
 ## Repository setup
 
 Run commands from the repository root. Use Python 3.12 or newer and PostgreSQL.
@@ -130,3 +132,123 @@ Each user has a `theme_preference` of `system` (default), `light`, or `dark`.
 The endpoint always updates the authenticated user; company settings are unaffected.
 The frontend applies the selection immediately and follows device appearance changes
 when System is selected. Failed saves display an error and restore the saved choice.
+
+
+### Platform service monitoring
+
+Apply platform_admin migration 0002 before starting updated workers. Reporting
+results are stored in PostgreSQL, so the web and worker share evidence even when
+using separate caches. Production Beat also queues `platform_admin.tasks.monitor_services`
+every five minutes. Keep the worker and one scheduler running using the deployment
+steps above. A result older than 15 minutes needs attention; reporting evidence
+expires after three minutes. Local `runserver` alone does not start scheduled jobs.
+
+For an explicit connectivity check, run `python manage.py check_platform_services`
+in the application's environment. It connects and authenticates to SMTP without
+sending email, and writes, reads, and deletes a unique file under `.healthchecks/`
+in configured storage. Give the worker access to that prefix. SMTP connectivity
+does not prove inbox delivery; storage availability does not prove privacy.
+The health API only reads these saved probe results; it never sends email or writes
+storage objects on page refresh. Provider error details and credentials are not
+included in the health response.
+
+Backups are still unmonitored. Before launch, select a protected backup destination,
+configure automated PostgreSQL and uploaded-file backups with retention, and
+perform an isolated restore drill. Do not restore over the live database or label
+backup protection healthy based solely on a configured schedule or a file's existence.
+This service-monitoring change does not create or schedule backups.
+
+
+### Local Windows automation without Redis
+
+With development settings and PostgreSQL, run
+`./Business/Scripts/python.exe manage.py run_local_automation` in a separate
+terminal alongside the web server. It runs the actual reporting workflow every
+minute (including due in-app reminders) and SMTP/storage probes every five minutes.
+`--once` performs a single cycle for diagnostics. A PostgreSQL advisory lock prevents
+a second local runner from running concurrently. The runner refuses production
+settings; do not run it alongside Celery reporting workers against the same database.
+Stop it with Ctrl+C. This foreground process does not survive Windows restart;
+restart it with the same command during local development. Production uses the
+Compose worker and scheduler with restart policies described above instead.
+
+Service health becomes stale if the runner stops. A running web server alone is
+not evidence that automation is operating. Backups require a separate protected
+destination and remain unmonitored until a backup and restore process is connected.
+
+
+### Encrypted backup tooling
+
+See `docs/backup-and-recovery.md` for the configured-destination backup command,
+optional daily production scheduling, and isolated recovery preparation. These
+commands require the destination and key; they have not copied live data as part
+of implementation. Recovery verification and retention configuration remain
+operator tasks.
+
+
+### Form attachments and safe publication
+
+Install the updated requirements (including pypdf), then apply migrations through
+forms_engine 0021. Migration 0020 adds the actor/company-bound draft retry key;
+0021 only adds minimum zero to unchanged monetary library definitions. Company
+copies, existing entries and customized library questions are preserved.
+
+Production settings require a clean malware verdict before uploads are stored.
+Configure ATTACHMENT_SCANNER=documents.scanning.clamav, CLAMAV_HOST and
+CLAMAV_PORT to an operator-provisioned ClamAV daemon on a private network.
+Keep signatures updated, enable INSTREAM and set its stream limit to at least
+25 MB. Never expose the ClamAV socket publicly. The daemon is not provisioned by
+this change. An unavailable scanner blocks uploads with a recoverable message;
+it does not discard the saved draft. Development permits content checks without
+a scanner. Do not disable the production requirement to work around an outage.
+
+Before release, verify clean and infected test files against the actual scanner,
+private storage/download access and proxy request limits in staging. Content
+checks reject renamed binary files, invalid/encrypted PDFs, unsafe Office ZIP
+containers and malformed images; they do not replace malware scanning.
+
+
+### Private scanner deployment and verification
+
+The optional `deployment/docker-compose.scanner.yml` adds the official ClamAV
+container, a persistent signature volume and a private application/scanner network.
+It exposes no host port and mounts no company uploads. Its separate update network
+allows signature downloads. The backend waits for the image's built-in healthcheck.
+Reserve 4 GiB for the scanner in addition to the application's requirements.
+Review `CLAMAV_IMAGE` and pin a supported image/digest before release; the example
+uses the documented 1.4 feature-release image. Follow the official image's update
+and end-of-life guidance: https://docs.clamav.net/manual/Installing/Docker.html.
+
+From the repository root on the deployment host, use the same explicit environment
+and Compose files for every command:
+
+```sh
+docker compose --env-file .env.production -f deployment/docker-compose.production.yml -f deployment/docker-compose.scanner.yml config --quiet
+docker compose --env-file .env.production -f deployment/docker-compose.production.yml -f deployment/docker-compose.scanner.yml up -d clamav
+docker compose --env-file .env.production -f deployment/docker-compose.production.yml -f deployment/docker-compose.scanner.yml ps clamav
+```
+
+Wait for healthy status and check signature update logs. Configure the daemon's
+StreamMaxLength, MaxFileSize and MaxScanSize for the application limit and archive
+policy; a clean 25 MiB probe below must pass. The image's healthcheck proves daemon
+readiness only, not successful detection. After the backend is running with the
+same configuration, execute:
+
+```sh
+docker compose --env-file .env.production -f deployment/docker-compose.production.yml -f deployment/docker-compose.scanner.yml exec backend python manage.py check_attachment_scanner --test-detection --test-upload-limit
+```
+
+This sends synthetic clean content, a 25 MiB clean stream and the harmless standard
+EICAR antivirus test string directly to the configured scanner in memory. It does
+not create submissions, persist files or change company data. An explicit clean
+verdict and an explicit rejected test verdict are required. Scanner errors and
+missing configuration fail the command. Running without `--test-detection` cannot
+certify detection. Run this in isolated staging first; antivirus monitoring may
+record the synthetic test detection.
+
+Then verify a clean file through the actual staging form and a scanner outage:
+the clean upload succeeds; an unavailable scanner blocks the upload and keeps its
+draft available for retry. Restore the scanner and retry on that same draft. Check
+that rejected uploads produced no storage objects. Do not stop the live production
+scanner to perform the outage test. Existing production processes are not started,
+reconfigured or deployed by adding these files.

@@ -63,6 +63,8 @@ class OfficialRecord(models.Model):
         max_length=255,
     )
 
+    classification = models.CharField(max_length=30, default="NORMAL")
+
     content_type = models.ForeignKey(
         ContentType,
         on_delete=models.PROTECT,

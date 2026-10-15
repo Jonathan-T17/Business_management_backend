@@ -1,5 +1,7 @@
 import pytest
 from types import SimpleNamespace
+from datetime import timedelta
+from django.utils import timezone
 from rest_framework.test import APIClient
 from companies.models import Company
 from subscriptions.models import Plan, Subscription
@@ -8,8 +10,8 @@ from core.admin_site import RecoveryAdminSite
 
 @pytest.mark.parametrize('staff,superuser,active,deleted,allowed', [(True,False,True,False,False),(True,True,True,False,True),(True,True,False,False,False),(True,True,True,True,False),(False,True,True,False,False)])
 def test_recovery_admin_boundary(staff,superuser,active,deleted,allowed):
-    user=SimpleNamespace(is_staff=staff,is_superuser=superuser,is_active=active,is_deleted=deleted)
-    assert RecoveryAdminSite().has_permission(SimpleNamespace(user=user)) is allowed
+    user=SimpleNamespace(pk='test-owner',is_authenticated=True,is_staff=staff,is_superuser=superuser,is_active=active,is_deleted=deleted)
+    assert RecoveryAdminSite().has_permission(SimpleNamespace(user=user,session={'platform_mfa_user':'test-owner','platform_mfa_at':timezone.now().timestamp()})) is allowed
 
 @pytest.mark.django_db
 def test_platform_subscription_contract_and_change(django_user_model):
@@ -54,7 +56,7 @@ def test_personal_security_is_owner_scoped(django_user_model):
     owner = django_user_model.objects.create_user(email='owner@example.test', password='x', company=company)
     other = django_user_model.objects.create_user(email='other@example.test', password='x', company=company)
     refresh = RefreshToken.for_user(owner)
-    own = ActiveSession.objects.create(user=owner, company=company, refresh_token_jti=refresh['jti'], ip_address='127.0.0.1')
+    own = ActiveSession.objects.create(user=owner, company=company, refresh_token_jti=refresh['jti'], ip_address='127.0.0.1', expires_at=timezone.now()+timedelta(days=1))
     foreign = ActiveSession.objects.create(user=other, company=company, refresh_token_jti='foreign', ip_address='127.0.0.1')
     device = TrustedDevice.objects.create(user=owner, token_hash='a'*64, device_name='Test browser')
     other_device = TrustedDevice.objects.create(user=other, token_hash='b'*64, device_name='Other browser')

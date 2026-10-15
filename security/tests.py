@@ -51,15 +51,15 @@ class CompanySecurityCenterAPITests(APITestCase):
 		self.client.force_authenticate(self.admin)
 
 	def test_audit_logs_are_scoped_to_company(self):
-		response = self.client.get("/api/company-audit-logs/")
+		response = self.client.get("/api/v1/company-audit-logs/")
 
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
-		self.assertEqual(len(response.data), 1)
-		self.assertEqual(response.data[0]["description"], "Acme security event")
+		self.assertEqual(len(response.data['results']), 1)
+		self.assertEqual(response.data['results'][0]["description"], "Acme security event")
 
 	def test_admin_can_terminate_company_session(self):
 		response = self.client.post(
-			f"/api/company-active-sessions/{self.session.id}/terminate/",
+			f"/api/v1/company-active-sessions/{self.session.id}/terminate/",
 		)
 
 		self.assertEqual(response.status_code, status.HTTP_200_OK)

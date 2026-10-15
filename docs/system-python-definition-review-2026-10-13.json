@@ -1,0 +1,27 @@
+{
+  "files_scanned": 643,
+  "duplicate_methods": [
+    {
+      "file": "documents\\serializers.py",
+      "class": "DocumentSerializer",
+      "method": "validate",
+      "first_line": 331,
+      "overriding_line": 399
+    },
+    {
+      "file": "reports\\views.py",
+      "class": "ReportViewSet",
+      "method": "_notify_report_submitted",
+      "first_line": 118,
+      "overriding_line": 380
+    },
+    {
+      "file": "reports\\views.py",
+      "class": "ReportCommentViewSet",
+      "method": "_notify_comment",
+      "first_line": 561,
+      "overriding_line": 690
+    }
+  ],
+  "parse_errors": []
+}

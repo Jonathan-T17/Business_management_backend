@@ -4,22 +4,17 @@ from core.roles import Roles
 
 class IsSuperUserOrPlatformAdmin(BasePermission):
     """
-    Allows access only to superusers or users with specific platform-level admin roles.
+    Allows access only to verified platform operators.
     """
-
-    allowed_roles = ["PlatformAdmin", "SecurityAdmin", "ComplianceAdmin"]
 
     def has_permission(self, request, view):
         user = request.user
         if not user or not user.is_authenticated:
             return False
 
-        # Superuser check
-        if user.is_superuser:
-            return True
-
-        # Role-based check
-        return getattr(user, "role", None) in self.allowed_roles
+        from core.capability_service import CapabilityService
+        from core.capabilities import Capabilities
+        return CapabilityService.has(user, Capabilities.PLATFORM_ADMIN)
 
 
 class RolePermission:
@@ -29,11 +24,14 @@ class RolePermission:
 
     @staticmethod
     def is_superuser(user):
-        return user.role == Roles.SUPERUSER
+        from core.capability_service import CapabilityService
+        from core.capabilities import Capabilities
+        return CapabilityService.has(user, Capabilities.PLATFORM_ADMIN)
 
     @staticmethod
     def is_admin(user):
-        return user.role == Roles.ADMIN
+        from core.capability_service import CapabilityService
+        return CapabilityService.is_tenant_identity(user) and user.role == Roles.ADMIN
 
     @staticmethod
     def is_manager(user):

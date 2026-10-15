@@ -1,3 +1,5 @@
+from django.urls import path
+from .passkeys import OwnPasskeys, RegistrationOptions, RegistrationVerify, RevokePasskey, LoginOptions, LoginVerify
 from rest_framework.routers import DefaultRouter
 from .views import (
     TrustedDeviceViewSet,
@@ -19,4 +21,11 @@ router.register(r"admin/login-history", LoginHistoryAdminViewSet, basename="logi
 router.register(r"company-audit-logs", CompanyAuditLogViewSet, basename="company-audit-log")
 router.register(r"company-active-sessions", CompanyActiveSessionViewSet, basename="company-active-session")
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("security/passkeys/", OwnPasskeys.as_view()),
+    path("security/passkeys/register/options/", RegistrationOptions.as_view()),
+    path("security/passkeys/register/verify/", RegistrationVerify.as_view()),
+    path("security/passkeys/<uuid:pk>/revoke/", RevokePasskey.as_view()),
+    path("auth/passkey/options/", LoginOptions.as_view()),
+    path("auth/passkey/verify/", LoginVerify.as_view()),
+] + router.urls

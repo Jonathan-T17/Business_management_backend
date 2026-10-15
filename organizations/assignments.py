@@ -1,12 +1,19 @@
 from django.db import transaction
 from rest_framework import serializers, viewsets
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema
+from .serializers import EmployeeAccessSummarySerializer
 from companies.models import Branch
 from core.position_scope import BRANCH_CAPABILITIES
 from company_setup.capability_policy import SetupCapabilityPolicy
 from security.services import create_audit_log
 from .models import EmployeePositionAssignment, EmployeeProfile, Position
 from .permissions import CanManageOrganization
+from .permissions import CanManageEmployees
+from company_setup.permissions import IsCompanySetupAdmin
 
 class PositionAssignmentSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source="employee.user.full_name", read_only=True)
@@ -27,6 +34,8 @@ class PositionAssignmentSerializer(serializers.ModelSerializer):
     def validate(self,attrs):
         def value(key): return attrs.get(key,getattr(self.instance,key,None))
         employee,position=value("employee"),value("position")
+        if self.instance and employee.pk != self.instance.employee_id:
+            raise serializers.ValidationError({'employee': 'An assignment belongs to its original employee. Create a separate assignment for another employee.'})
         active=attrs.get("is_active",getattr(self.instance,"is_active",True))
         company_id=self.context["request"].user.company_id
         if employee.company_id!=company_id or employee.user.company_id!=company_id or position.company_id!=company_id:
@@ -34,6 +43,11 @@ class PositionAssignmentSerializer(serializers.ModelSerializer):
         branches=attrs.get("branches",list(self.instance.branches.all()) if self.instance else [])
         if any(b.company_id!=company_id for b in branches):
             raise serializers.ValidationError({"branches":"Choose locations in your company."})
+        duplicates = EmployeePositionAssignment.objects.filter(company_id=company_id, employee=employee, position=position)
+        if self.instance:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise serializers.ValidationError({'position': 'This employee already has this additional position. Review its existing assignment to edit or reactivate it.'})
         if not active: return attrs
         if employee.status!="ACTIVE" or not position.is_active:
             raise serializers.ValidationError("Choose an active employee and position.")
@@ -50,10 +64,45 @@ class PositionAssignmentSerializer(serializers.ModelSerializer):
         SetupCapabilityPolicy.validate_preset(actor=self.context["request"].user,capabilities=list(caps))
         return attrs
 
+class PositionAssignmentPreviewSerializer(PositionAssignmentSerializer):
+    assignment_id = serializers.IntegerField(required=False, min_value=1)
+    class Meta(PositionAssignmentSerializer.Meta):
+        fields = PositionAssignmentSerializer.Meta.fields + ('assignment_id',)
+
+
 class PositionAssignmentViewSet(viewsets.ModelViewSet):
     serializer_class=PositionAssignmentSerializer
     permission_classes=[IsAuthenticated,CanManageOrganization]
     http_method_names=["get","post","patch","head","options"]
+    def get_serializer_class(self):
+        return PositionAssignmentPreviewSerializer if self.action == 'preview' else PositionAssignmentSerializer
+
+    def get_permissions(self):
+        if self.action == 'preview':
+            return [IsAuthenticated(), CanManageOrganization(), CanManageEmployees(), IsCompanySetupAdmin()]
+        return super().get_permissions()
+
+    @extend_schema(request=PositionAssignmentPreviewSerializer, responses=EmployeeAccessSummarySerializer)
+    @action(detail=False, methods=['post'], url_path='preview')
+    def preview(self, request):
+        from types import SimpleNamespace
+        from core.position_scope import PositionScope
+        from .access_summary import employee_access_summary
+        assignment_id = request.data.get('assignment_id')
+        if assignment_id is not None and (isinstance(assignment_id, bool) or not str(assignment_id).isdigit() or int(assignment_id) < 1):
+            raise serializers.ValidationError({'assignment_id': 'Choose a valid saved assignment.'})
+        instance = get_object_or_404(self.get_queryset(), pk=assignment_id) if assignment_id else None
+        serializer = self.get_serializer(instance, data=request.data, partial=bool(instance))
+        serializer.is_valid(raise_exception=True)
+        attrs = serializer.validated_data
+        profile = attrs.get('employee', getattr(instance, 'employee', None))
+        assignments = list(PositionScope.assignments(profile.user).select_related('position').prefetch_related('position__capability_grants', 'branches'))
+        assignments = [item for item in assignments if not instance or item.pk != instance.pk]
+        if attrs.get('is_active', getattr(instance, 'is_active', True)):
+            position = attrs.get('position', getattr(instance, 'position', None))
+            branches = attrs.get('branches', list(instance.branches.all()) if instance else [])
+            assignments.append(SimpleNamespace(position=position, scope=attrs.get('scope', getattr(instance, 'scope', None)), branches=SimpleNamespace(all=lambda: branches)))
+        return Response(EmployeeAccessSummarySerializer(employee_access_summary(profile, projected_assignments=assignments)).data)
     def get_queryset(self):
         from core.capability_service import CapabilityService
         if not CapabilityService.is_tenant_identity(self.request.user): return EmployeePositionAssignment.objects.none()

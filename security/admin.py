@@ -8,8 +8,19 @@ from .models import (
 )
 
 
+class ReadOnlySecurityAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(AuditLog)
-class AuditLogAdmin(admin.ModelAdmin):
+class AuditLogAdmin(ReadOnlySecurityAdmin):
     list_display = (
         "action",
         "user",
@@ -32,7 +43,7 @@ class AuditLogAdmin(admin.ModelAdmin):
 
 
 @admin.register(LoginHistory)
-class LoginHistoryAdmin(admin.ModelAdmin):
+class LoginHistoryAdmin(ReadOnlySecurityAdmin):
     list_display = (
         "user",
         "ip_address",
@@ -48,7 +59,7 @@ class LoginHistoryAdmin(admin.ModelAdmin):
 
 
 @admin.register(ActiveSession)
-class ActiveSessionAdmin(admin.ModelAdmin):
+class ActiveSessionAdmin(ReadOnlySecurityAdmin):
     list_display = (
         "user",
         "device",
@@ -59,7 +70,7 @@ class ActiveSessionAdmin(admin.ModelAdmin):
 
 
 @admin.register(FailedLoginAttempt)
-class FailedLoginAttemptAdmin(admin.ModelAdmin):
+class FailedLoginAttemptAdmin(ReadOnlySecurityAdmin):
     list_display = (
         "email_hint",
         "ip_address",

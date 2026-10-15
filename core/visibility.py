@@ -223,10 +223,14 @@ class VisibilityService:
             model=FormSubmission,
             delegated_permission="REVIEW_SUBMISSIONS",
         )
+        from forms_engine.access import FormAccess
+        shared = Q(template_id__in=FormAccess.shared_templates(user).values('pk')) & ~Q(status__in=['DRAFT', 'RETURNED', 'CANCELLED'])
         if not any(CapabilityService.has(user,cap) for cap in (Capabilities.VIEW_FORM_SUBMISSIONS,Capabilities.REVIEW_SUBMISSIONS)):
-            return queryset.filter(submitted_by=user)
+            return queryset.filter(
+                Q(submitted_by=user) | Q(id__in=[str(item) for item in workflow_ids]) | shared
+            ).distinct()
         return queryset.filter(
-            Q(submitted_by=user) | Q(id__in=[str(item) for item in workflow_ids])
+            Q(submitted_by=user) | Q(id__in=[str(item) for item in workflow_ids]) | shared
             | Q(branch_id__in=PositionScope.branches_for(user, Capabilities.VIEW_FORM_SUBMISSIONS))
         ).distinct()
 
@@ -259,7 +263,7 @@ class VisibilityService:
 
         queryset = queryset.filter(company_id=user.company_id, is_active=True)
         profile = getattr(user, "employee_profile", None)
-        conditions = Q(visibility="COMPANY") | Q(visibility="PRIVATE", owner=user)
+        conditions = Q(visibility="COMPANY") | Q(owner=user)
 
         if user.branch_id:
             conditions |= Q(visibility="BRANCH", branch_id=user.branch_id)

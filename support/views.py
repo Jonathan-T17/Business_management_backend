@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 
 from core.authorization import Authorization
 from core.roles import Roles
@@ -16,6 +17,7 @@ from .models import SupportMessage, SupportTicket
 from .permissions import CanUseSupport, IsPlatformSupport
 from .serializers import (
     SupportMessageSerializer,
+    SupportTicketListSerializer,
     SupportTicketCreateSerializer,
     SupportTicketSerializer,
     SupportTicketUpdateSerializer,
@@ -24,6 +26,8 @@ from .serializers import (
 
 class SupportTicketViewSet(viewsets.ModelViewSet):
     permission_classes = (IsAuthenticated, CanUseSupport)
+    filterset_fields = ("status", "priority", "category")
+    ordering = ("-created_at", "-id")
 
     def get_queryset(self):
         queryset = SupportTicket.objects.select_related("company", "created_by", "assigned_to").prefetch_related("messages__author")
@@ -35,11 +39,25 @@ class SupportTicketViewSet(viewsets.ModelViewSet):
         return queryset
 
     def get_serializer_class(self):
+        if self.action == "list":
+            return SupportTicketListSerializer
         if self.action == "create":
             return SupportTicketCreateSerializer
         if self.action in ("partial_update", "update"):
             return SupportTicketUpdateSerializer
         return SupportTicketSerializer
+
+    @extend_schema(responses={201: SupportTicketSerializer})
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        # The form serializer contains input fields only. Return the saved
+        # ticket so clients can open its detail page immediately after creation.
+        data = SupportTicketSerializer(
+            serializer.instance, context=self.get_serializer_context(),
+        ).data
+        return Response(data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(data))
 
     @transaction.atomic
     def perform_create(self, serializer):
@@ -57,7 +75,7 @@ class SupportTicketViewSet(viewsets.ModelViewSet):
                 notification_type="SYSTEM",
                 company=ticket.company,
                 reference_id=str(ticket.id),
-                url=f"/support/tickets/{ticket.id}",
+                url="/platform/support",
             )
 
     @action(detail=True, methods=["post"])
@@ -96,7 +114,7 @@ class SupportTicketViewSet(viewsets.ModelViewSet):
                 notification_type="SYSTEM",
                 company=ticket.company,
                 reference_id=str(ticket.id),
-                url=f"/support/tickets/{ticket.id}",
+                url=f"/support/{ticket.id}",
             )
         else:
             for platform_user in User.objects.filter(is_active=True).filter(role=Roles.SUPERUSER):
@@ -107,7 +125,7 @@ class SupportTicketViewSet(viewsets.ModelViewSet):
                     notification_type="SYSTEM",
                     company=ticket.company,
                     reference_id=str(ticket.id),
-                    url=f"/platform/support/tickets/{ticket.id}",
+                    url="/platform/support",
                 )
         create_audit_log(user=request.user, company=ticket.company, request=request, action="CREATE", description=f"Reply added to support ticket {ticket.reference}.", obj=ticket)
         return Response(SupportMessageSerializer(message).data, status=status.HTTP_201_CREATED)

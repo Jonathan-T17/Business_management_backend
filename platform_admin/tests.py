@@ -30,12 +30,12 @@ class PlatformFrontendContractTests(APITestCase):
 		self.client.force_authenticate(self.platform_user)
 
 	def test_canonical_and_short_session_endpoints_are_available(self):
-		for url in ("/api/platform/security/sessions/", "/api/platform/sessions/"):
+		for url in ("/api/platform/v1/security/sessions/", "/api/platform/v1/sessions/"):
 			response = self.client.get(url)
 			self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 	def test_platform_user_actions_require_reason_and_change_state(self):
-		url = f"/api/platform/users/{self.target.id}/deactivate/"
+		url = f"/api/platform/v1/users/{self.target.id}/deactivate/"
 		response = self.client.post(url, {}, format="json")
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -45,7 +45,7 @@ class PlatformFrontendContractTests(APITestCase):
 		self.assertFalse(self.target.is_active)
 
 		response = self.client.post(
-			f"/api/platform/users/{self.target.id}/require-password-reset/",
+			f"/api/platform/v1/users/{self.target.id}/require-password-reset/",
 			{"reason": "Security review"},
 			format="json",
 		)
@@ -54,26 +54,26 @@ class PlatformFrontendContractTests(APITestCase):
 		self.assertTrue(self.target.must_change_password)
 
 		response = self.client.post(
-			f"/api/platform/users/{self.target.id}/reactivate/",
+			f"/api/platform/v1/users/{self.target.id}/reactivate/",
 			{"reason": "Review completed"},
 			format="json",
 		)
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 	def test_platform_settings_are_safe_read_only_configuration(self):
-		response = self.client.get("/api/platform/settings/")
+		response = self.client.get("/api/platform/v1/settings/")
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		self.assertFalse(response.data["editable"])
 		self.assertNotIn("SECRET_KEY", response.data)
 
 	def test_platform_plan_catalog_is_available(self):
-		response = self.client.get("/api/platform/plans/")
+		response = self.client.get("/api/platform/v1/plans/")
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 	def test_platform_user_list_serializes_allowed_actions(self):
-		response = self.client.get("/api/platform/users/")
+		response = self.client.get("/api/platform/v1/users/")
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
-		self.assertGreater(len(response.data), 0)
-		self.assertIn("allowed_actions", response.data[0])
+		self.assertGreater(len(response.data['results']), 0)
+		self.assertIn("allowed_actions", response.data['results'][0])
 
 # Create your tests here.

@@ -157,6 +157,21 @@ class ReportingObligationService:
 class ReportingObligationStateService:
     @classmethod
     @transaction.atomic
+    def mark_decision(cls, *, submission, outcome):
+        from reporting_schedules.models import ReportingObligation
+        if outcome not in {"APPROVED", "REJECTED", "RETURNED"}:
+            raise ValidationError("Unsupported reporting decision.")
+        obligation = ReportingObligation.objects.select_for_update().filter(
+            submission=submission, company_id=submission.company_id).first()
+        if obligation is None:
+            return
+        if obligation.status not in {"SUBMITTED", "LATE"}:
+            raise ValidationError("This report is not awaiting a decision.")
+        obligation.status = outcome
+        obligation.save(update_fields=["status"])
+
+    @classmethod
+    @transaction.atomic
     def mark_submitted(cls, *, obligation, submitted_at):
         from reporting_schedules.models import ReportingObligation
 
@@ -180,6 +195,7 @@ class ReportingObligationStateService:
         queryset = ReportingObligation.objects.select_for_update().filter(
             status__in=["PENDING", "DRAFT"],
             due_at__lt=now,
+            company__archived_at__isnull=True,
         )
         count = 0
         for obligation in queryset:

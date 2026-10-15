@@ -1,3 +1,4 @@
+from .duties import PlatformDutyPermission
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -10,6 +11,8 @@ from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
 
 from companies.models import Company
+from companies.lifecycle import WorkspaceLifecycleThrottle, WorkspaceLifecycleInput, WorkspaceAccessInput, WorkspaceAccessResult
+from drf_spectacular.utils import extend_schema
 from notifications.models import EmailDeliveryLog
 from users.models import User
 from core.roles import Roles
@@ -30,6 +33,7 @@ from security.models import (
 
 from security.services import (
     create_audit_log,
+    current_sessions,
     terminate_company_sessions,
     terminate_session,
     terminate_user_sessions,
@@ -68,9 +72,7 @@ from .health import (
 
 class PlatformDashboardView(APIView):
 
-    permission_classes = [
-        IsPlatformSuperUser,
-    ]
+    permission_classes = [PlatformDutyPermission]
 
     def get(self, request):
 
@@ -124,7 +126,7 @@ class PlatformDashboardView(APIView):
 
 
 class PlatformSettingsView(APIView):
-    permission_classes = [IsPlatformSuperUser]
+    permission_classes = [PlatformDutyPermission]
 
     def get(self, request):
         return Response({
@@ -151,9 +153,7 @@ class PlatformCompanyViewSet(
         PlatformCompanySerializer
     )
 
-    permission_classes = [
-        IsPlatformSuperUser,
-    ]
+    permission_classes = [PlatformDutyPermission]
 
     def get_queryset(self):
 
@@ -181,6 +181,9 @@ class PlatformCompanyViewSet(
             .get("status")
         )
 
+        if self.action == "list":
+            queryset = queryset.filter(archived_at__isnull=status_filter != "archived")
+
         if search:
             queryset = queryset.filter(
                 name__icontains=search
@@ -199,117 +202,49 @@ class PlatformCompanyViewSet(
         return queryset
 
 
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="deactivate",
-    )
-    def deactivate(
-        self,
-        request,
-        pk=None,
-    ):
+    def _change_workspace_access(self, request, *, active):
+        from companies.lifecycle import WorkspaceAccessInput, set_platform_workspace_access
+        data = WorkspaceAccessInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        company = set_platform_workspace_access(company=self.get_object(), actor=request.user,
+            active=active, reason=data.validated_data["reason"], request=request)
+        return Response({"message": "Workspace reactivated." if active else "Workspace suspended.",
+                         "is_active": company.is_active})
 
-        company = self.get_object()
+    @extend_schema(request=WorkspaceAccessInput, responses=WorkspaceAccessResult)
+    @action(detail=True, methods=["post"], url_path="deactivate", throttle_classes=[WorkspaceLifecycleThrottle])
+    def deactivate(self, request, pk=None):
+        return self._change_workspace_access(request, active=False)
 
-        reason = (
-            request.data
-            .get("reason", "")
-            .strip()
-        )
+    @extend_schema(request=WorkspaceAccessInput, responses=WorkspaceAccessResult)
+    @action(detail=True, methods=["post"], url_path="activate", throttle_classes=[WorkspaceLifecycleThrottle])
+    def activate(self, request, pk=None):
+        return self._change_workspace_access(request, active=True)
 
-        if not reason:
-            raise ValidationError({
-                "reason":
-                    "A reason is required."
-            })
-
-        company.is_active = False
-
-        company.save(
-            update_fields=[
-                "is_active"
-            ]
-        )
-        terminate_company_sessions(company, actor=request.user, reason="ACCOUNT_STATE", note=reason, request=request)
-
-        create_audit_log(
-            user=request.user,
-            company=company,
-            request=request,
-            action="UPDATE",
-            description=(
-                f"Platform administrator "
-                f"deactivated company "
-                f"{company.name}. "
-                f"Reason: {reason}"
-            ),
-            obj=company,
-        )
-
-        return Response({
-            "message":
-                "Company deactivated."
-        })
-
-
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="activate",
-    )
-    def activate(
-        self,
-        request,
-        pk=None,
-    ):
-
-        company = self.get_object()
-
-        company.is_active = True
-
-        company.save(
-            update_fields=[
-                "is_active"
-            ]
-        )
-
-        reason = (
-            request.data
-            .get("reason", "")
-            .strip()
-        )
-
-        create_audit_log(
-            user=request.user,
-            company=company,
-            request=request,
-            action="UPDATE",
-            description=(
-                f"Platform administrator "
-                f"activated company "
-                f"{company.name}."
-                + (
-                    f" Reason: {reason}"
-                    if reason
-                    else ""
-                )
-            ),
-            obj=company,
-        )
-
-        return Response({
-            "message":
-                "Company activated."
-        })
-
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="reactivate",
-    )
+    @extend_schema(request=WorkspaceAccessInput, responses=WorkspaceAccessResult)
+    @action(detail=True, methods=["post"], url_path="reactivate", throttle_classes=[WorkspaceLifecycleThrottle])
     def reactivate(self, request, pk=None):
-        return self.activate(request, pk=pk)
+        return self._change_workspace_access(request, active=True)
+
+    @extend_schema(request=WorkspaceLifecycleInput, responses=PlatformCompanySerializer)
+    @action(detail=True, methods=["post"], url_path="archive", throttle_classes=[WorkspaceLifecycleThrottle])
+    def archive(self, request, pk=None):
+        from companies.lifecycle import WorkspaceLifecycleInput, WorkspaceLifecycleService
+        data = WorkspaceLifecycleInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        company = WorkspaceLifecycleService.archive(company=self.get_object(), actor=request.user,
+                    values=data.validated_data, request=request)
+        return Response(self.get_serializer(company).data)
+
+    @extend_schema(request=WorkspaceLifecycleInput, responses=PlatformCompanySerializer)
+    @action(detail=True, methods=["post"], url_path="restore", throttle_classes=[WorkspaceLifecycleThrottle])
+    def restore(self, request, pk=None):
+        from companies.lifecycle import WorkspaceLifecycleInput, WorkspaceLifecycleService
+        data = WorkspaceLifecycleInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        company = WorkspaceLifecycleService.restore(company=self.get_object(), actor=request.user,
+                    values=data.validated_data, request=request)
+        return Response(self.get_serializer(company).data)
 
 
 # ============================================================
@@ -324,9 +259,7 @@ class PlatformUserViewSet(
         PlatformUserSerializer
     )
 
-    permission_classes = [
-        IsPlatformSuperUser,
-    ]
+    permission_classes = [PlatformDutyPermission]
 
     def get_queryset(self):
 
@@ -441,11 +374,13 @@ class PlatformUserViewSet(
 
     def _get_action_target(self, pk):
         target_user = self.get_object()
-        if target_user.role == Roles.SUPERUSER:
+        from core.capability_service import CapabilityService
+        if CapabilityService.is_platform_identity(target_user):
             raise ValidationError("Platform superuser accounts cannot be changed through this endpoint.")
         return target_user
 
     @action(detail=True, methods=["post"], url_path="deactivate")
+    @transaction.atomic
     def deactivate(self, request, pk=None):
         target_user = self._get_action_target(pk)
         reason = self._require_reason(request)
@@ -464,6 +399,7 @@ class PlatformUserViewSet(
         return Response({"message": "User deactivated.", "is_active": False})
 
     @action(detail=True, methods=["post"], url_path="reactivate")
+    @transaction.atomic
     def reactivate(self, request, pk=None):
         target_user = self._get_action_target(pk)
         reason = self._require_reason(request)
@@ -481,12 +417,14 @@ class PlatformUserViewSet(
         return Response({"message": "User reactivated.", "is_active": True})
 
     @action(detail=True, methods=["post"], url_path="require-password-reset")
+    @transaction.atomic
     def require_password_reset(self, request, pk=None):
         target_user = self._get_action_target(pk)
         reason = self._require_reason(request)
         target_user.must_change_password = True
         target_user.password_reset_required_at = timezone.now()
         target_user.save(update_fields=("must_change_password", "password_reset_required_at"))
+        terminate_user_sessions(target_user, actor=request.user, reason="PASSWORD_RESET", note=reason, request=request)
         create_audit_log(
             user=request.user,
             company=target_user.company,
@@ -511,9 +449,7 @@ class PlatformActiveSessionViewSet(
         PlatformActiveSessionSerializer
     )
 
-    permission_classes = [
-        IsPlatformSuperUser,
-    ]
+    permission_classes = [PlatformDutyPermission]
 
     def get_queryset(self):
 
@@ -542,14 +478,10 @@ class PlatformActiveSessionViewSet(
         )
 
         if active == "true":
-            queryset = queryset.filter(
-                is_active=True
-            )
+            queryset = queryset.filter(pk__in=current_sessions().values("pk"))
 
         elif active == "false":
-            queryset = queryset.filter(
-                is_active=False
-            )
+            queryset = queryset.exclude(pk__in=current_sessions().values("pk"))
 
         if company:
             queryset = queryset.filter(
@@ -629,9 +561,7 @@ class PlatformLoginHistoryViewSet(
         PlatformLoginHistorySerializer
     )
 
-    permission_classes = [
-        IsPlatformSuperUser,
-    ]
+    permission_classes = [PlatformDutyPermission]
 
     def get_queryset(self):
 
@@ -689,9 +619,7 @@ class PlatformFailedLoginViewSet(
         PlatformFailedLoginSerializer
     )
 
-    permission_classes = [
-        IsPlatformSuperUser,
-    ]
+    permission_classes = [PlatformDutyPermission]
 
     def get_queryset(self):
         return (
@@ -773,9 +701,7 @@ class PlatformAuditLogViewSet(
         PlatformAuditLogSerializer
     )
 
-    permission_classes = [
-        IsPlatformSuperUser,
-    ]
+    permission_classes = [PlatformDutyPermission]
 
     def get_queryset(self):
 
@@ -867,14 +793,29 @@ class PlatformAuditLogViewSet(
 
 class PlatformPlanViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = None
-    permission_classes = [IsPlatformSuperUser]
+    permission_classes = [PlatformDutyPermission]
     serializer_class = PlatformPlanSerializer
     queryset = Plan.objects.filter(is_active=True).order_by("price_monthly", "name")
 
 
 class PlatformSubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = PlatformSubscriptionSerializer
-    permission_classes = [IsPlatformSuperUser]
+    permission_classes = [PlatformDutyPermission]
+
+    @action(detail=True, methods=["post"], url_path="renew")
+    def renew(self, request, pk=None):
+        from .serializers import PlatformSubscriptionRenewSerializer
+        from .maintenance import MaintenanceWriteThrottle
+        from subscriptions.services import SubscriptionLifecycleService
+        throttle = MaintenanceWriteThrottle()
+        if not throttle.allow_request(request, self):
+            self.throttled(request, throttle.wait())
+        payload = PlatformSubscriptionRenewSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        current = self.get_object()
+        SubscriptionLifecycleService.renew(subscription=current, actor=request.user,
+            request=request, **payload.validated_data)
+        return Response(self.get_serializer(self.get_queryset().get(pk=current.pk)).data)
 
     @action(detail=True, methods=["get"], url_path="plan-options")
     def plan_options(self, request, pk=None):
@@ -924,9 +865,7 @@ class PlatformActivityViewSet(
         PlatformActivitySerializer
     )
 
-    permission_classes = [
-        IsPlatformSuperUser,
-    ]
+    permission_classes = [PlatformDutyPermission]
 
     def get_queryset(self):
 
@@ -963,9 +902,7 @@ class PlatformActivityViewSet(
 
 class PlatformHealthView(APIView):
 
-    permission_classes = [
-        IsPlatformSuperUser,
-    ]
+    permission_classes = [PlatformDutyPermission]
 
     def get(self, request):
 

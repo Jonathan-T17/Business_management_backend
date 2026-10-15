@@ -17,6 +17,13 @@ MAX_LOGIN_ATTEMPTS = 5
 ACCOUNT_LOCK_MINUTES = 15
 OTP_TTL_MINUTES = 5
 OTP_MAX_PER_15_MINUTES = 5
+
+
+def current_sessions():
+    from django.db.models import Q
+    platform = Q(user__is_superuser=True) | Q(user__role="SUPERUSER")
+    return ActiveSession.objects.filter(is_active=True, expires_at__gt=timezone.now()).filter(
+        ~platform | Q(mfa_verified_at__isnull=False))
 SAFE_SUPPORT_SCOPES = {
     "COMPANY_CONFIGURATION", "ORGANIZATION_CONFIGURATION", "WORKFLOW_CONFIGURATION",
     "REPORTING_CONFIGURATION", "SUBSCRIPTION_DIAGNOSTICS", "SECURITY_DIAGNOSTICS",
@@ -44,7 +51,7 @@ def record_login(request, user, successful=True, session=None, failure_reason=""
     )
 
 
-def create_active_session(request, user, refresh_jti, expires_at=None):
+def create_active_session(request, user, refresh_jti, expires_at=None, mfa_verified=False):
     ua = parse(request.META.get("HTTP_USER_AGENT", ""))
     if expires_at is None:
         token = OutstandingToken.objects.filter(jti=refresh_jti, user=user).first()
@@ -54,6 +61,7 @@ def create_active_session(request, user, refresh_jti, expires_at=None):
         refresh_token_jti=refresh_jti, ip_address=get_client_ip(request),
         browser=ua.browser.family, operating_system=ua.os.family,
         device=ua.device.family, expires_at=expires_at,
+        mfa_verified_at=timezone.now() if mfa_verified else None,
     )
 
 
@@ -75,7 +83,7 @@ def create_audit_log(*, user=None, action, request=None, company=None, branch=No
         object_id=str(obj.pk) if obj and getattr(obj, "pk", None) else None,
         description=description[:2000],
         metadata=metadata or {},
-        ip_address=getattr(request, "client_ip", None) or (request.META.get("REMOTE_ADDR") if request else None),
+        ip_address=get_client_ip(request) if request else None,
         user_agent=(request.META.get("HTTP_USER_AGENT", "")[:1000] if request else ""),
         status=status,
     )
@@ -114,7 +122,9 @@ def terminate_user_sessions(user, *, actor=None, reason="ACCOUNT_STATE", note=""
 
 @transaction.atomic
 def terminate_company_sessions(company, *, actor=None, reason="SECURITY", note="", request=None):
-    sessions = list(ActiveSession.objects.select_for_update().filter(company=company, is_active=True))
+    from django.db.models import Q
+    sessions = list(ActiveSession.objects.select_for_update().filter(
+        Q(company=company) | Q(user__company=company), is_active=True))
     for session in sessions:
         terminate_session(session=session, actor=actor, reason=reason, note=note, request=request)
     return len(sessions)

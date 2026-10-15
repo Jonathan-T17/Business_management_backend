@@ -1,0 +1,12 @@
+{
+  "directory": {
+    "company_scope_permission": true,
+    "company_profiles": 2,
+    "visible_profiles": 1
+  },
+  "private_report_notification": {
+    "recipient_can_view_report": false,
+    "private_title_in_message": true,
+    "report_status": "DRAFT"
+  }
+}

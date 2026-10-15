@@ -304,6 +304,7 @@ class PositionSerializer(serializers.ModelSerializer):
             "company",
             "title",
             "branch", "department", "team", "reports_to",
+            "primary_scope",
             "description",
             "salary_grade",
             "is_management",
@@ -311,7 +312,7 @@ class PositionSerializer(serializers.ModelSerializer):
         )
 
         read_only_fields = (
-            "company",
+            "company", "primary_scope",
         )
 
 
@@ -323,6 +324,13 @@ class PositionSerializer(serializers.ModelSerializer):
             if obj and (obj.company_id != company.pk or not obj.is_active):
                 raise serializers.ValidationError({key: "Choose an active item in your company."})
         branch, department, team = (values[k] for k in ("branch", "department", "team"))
+        if self.instance and self.instance.primary_scope == "BRANCH" and branch is None:
+            raise serializers.ValidationError({"branch": "This position has location-limited access. Review its access scope before removing its location."})
+        if self.instance and self.instance.primary_scope == "BRANCH" and getattr(branch, "pk", None) != self.instance.branch_id:
+            from core.capability_service import CapabilityService
+            from core.capabilities import Capabilities
+            if not CapabilityService.has(self.context["request"].user, Capabilities.MANAGE_COMPANY_SETUP):
+                raise serializers.ValidationError({"branch": "A company setup administrator must review this move because it changes the location this position can access."})
         if department and department.branch_id not in (None, getattr(branch, "pk", None)):
             raise serializers.ValidationError({"department": "This department belongs to another location."})
         if team and (team.department_id != getattr(department, "pk", None) or team.branch_id != getattr(branch, "pk", None)):
@@ -337,6 +345,73 @@ class PositionSerializer(serializers.ModelSerializer):
 
 
 class EmployeeProfileSerializer(serializers.ModelSerializer):
+
+    PERSONAL_FIELDS = ("phone", "emergency_contact")
+    CONFIDENTIAL_FIELDS = ("notes", "termination_reason", "terminated_by")
+    allowed_actions = serializers.SerializerMethodField()
+
+    def get_allowed_actions(self, instance) -> list[str]:
+        from core.capabilities import Capabilities
+        from core.capability_service import CapabilityService
+        from users.services import TenantUserLifecycleService
+        user = getattr(self.context.get("request"), "user", None)
+        if not CapabilityService.is_tenant_identity(user) or user.company_id != instance.company_id:
+            return []
+        actions = []
+        if CapabilityService.has_company(user, Capabilities.MANAGE_EMPLOYEES):
+            actions.append("EDIT")
+            if instance.status == "ACTIVE":
+                actions.append("PLACE_ON_LEAVE")
+            elif instance.status == "ON_LEAVE":
+                actions.append("RETURN_FROM_LEAVE")
+            elif instance.status == "SUSPENDED":
+                actions.append("REACTIVATE")
+            if user.pk != instance.user_id and not TenantUserLifecycleService._is_last_active_admin(instance.user):
+                if instance.status in ("ACTIVE", "ON_LEAVE"):
+                    actions.append("SUSPEND")
+                if instance.status != "TERMINATED":
+                    actions.append("TERMINATE")
+        if CapabilityService.has_company(user, Capabilities.MANAGE_COMPANY_SETUP):
+            actions.append("MANAGE_ACCESS")
+        if CapabilityService.has_company(user, Capabilities.VIEW_COMPENSATION):
+            actions.append("VIEW_COMPENSATION")
+        if CapabilityService.has_company(user, Capabilities.MANAGE_COMPENSATION):
+            actions.append("MANAGE_COMPENSATION")
+        return actions
+
+    def create(self, validated_data):
+        from django.db import transaction
+        from django.utils import timezone
+        validated_data.setdefault("hire_date", timezone.localdate())
+        with transaction.atomic():
+            profile = super().create(validated_data)
+            if "branch" in validated_data:
+                profile.user.branch = profile.branch
+                profile.user.save(update_fields=["branch"])
+            return profile
+
+    def update(self, instance, validated_data):
+        from django.db import transaction
+        with transaction.atomic():
+            profile = super().update(instance, validated_data)
+            if "branch" in validated_data:
+                profile.user.branch = profile.branch
+                profile.user.save(update_fields=["branch"])
+            return profile
+
+    def to_representation(self, instance):
+        from core.capabilities import Capabilities
+        from core.capability_service import CapabilityService
+        data = super().to_representation(instance)
+        user = getattr(self.context.get("request"), "user", None)
+        same_company = CapabilityService.is_tenant_identity(user) and user.company_id == instance.company_id
+        personal = same_company and (user.pk == instance.user_id or CapabilityService.has_company(user, Capabilities.VIEW_PERSONAL_DATA))
+        confidential = same_company and CapabilityService.has_company(user, Capabilities.VIEW_HR_CONFIDENTIAL)
+        for field in self.PERSONAL_FIELDS if not personal else ():
+            data.pop(field, None)
+        for field in self.CONFIDENTIAL_FIELDS if not confidential else ():
+            data.pop(field, None)
+        return data
 
     employee_name = serializers.CharField(
         source="user.full_name",
@@ -381,12 +456,15 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeProfile
 
-        fields = ('id', 'employee_name', 'email', 'company_name', 'branch_name', 'department_name', 'team_name', 'manager_name', 'position_name', 'employee_id', 'employment_type', 'status', 'hire_date', 'termination_date', 'termination_reason', 'phone', 'office_location', 'emergency_contact', 'notes', 'created_at', 'updated_at', 'user', 'company', 'branch', 'department', 'team', 'manager', 'position', 'terminated_by')
+        fields = ('id', 'employee_name', 'email', 'company_name', 'branch_name', 'department_name', 'team_name', 'manager_name', 'position_name', 'employee_id', 'employment_type', 'status', 'hire_date', 'termination_date', 'termination_reason', 'phone', 'office_location', 'emergency_contact', 'notes', 'created_at', 'updated_at', 'user', 'company', 'branch', 'department', 'team', 'manager', 'position', 'terminated_by', 'allowed_actions')
 
         read_only_fields = (
             "company",
             "created_at",
             "updated_at",
+            "status",
+            "termination_date",
+            "terminated_by",
         )
 
     def validate(self, attrs):
@@ -395,10 +473,37 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
 
         company = user.company
 
+        from core.capabilities import Capabilities
+        from core.capability_service import CapabilityService
+        if "user" in attrs and self.instance and attrs["user"].pk != self.instance.user_id:
+            raise serializers.ValidationError({"user": "An existing company profile cannot be reassigned to another account."})
+        requested_status = getattr(self, "initial_data", {}).get("status")
+        if requested_status is not None and requested_status != getattr(self.instance, "status", "ACTIVE"):
+            raise serializers.ValidationError({"status": "Use the employee employment actions to change status."})
+        position_changed = "position" in attrs and attrs["position"] != getattr(self.instance, "position", None)
+        if position_changed and not CapabilityService.has_company(user, Capabilities.MANAGE_COMPANY_SETUP):
+            raise serializers.ValidationError({"position": "Company setup access is required to assign a position and its permissions."})
+
+        employee_id = attrs.get("employee_id")
+        if employee_id:
+            existing = EmployeeProfile.objects.filter(company=company, employee_id=employee_id)
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                raise serializers.ValidationError({"employee_id": "This employee ID is already used in your company."})
+
+        confidential_changes = set(attrs) & set(self.CONFIDENTIAL_FIELDS)
+        if confidential_changes and not CapabilityService.has_company(user, Capabilities.VIEW_HR_CONFIDENTIAL):
+            raise serializers.ValidationError({field: "Confidential HR access is required." for field in confidential_changes})
+        selected = attrs.get("user", getattr(self.instance, "user", None))
+        personal_changes = set(attrs) & set(self.PERSONAL_FIELDS)
+        if personal_changes and selected != user and not CapabilityService.has_company(user, Capabilities.VIEW_PERSONAL_DATA):
+            raise serializers.ValidationError({field: "Personal-data access is required." for field in personal_changes})
+
         selected_user = attrs.get("user")
-        branch = attrs.get("branch")
-        department = attrs.get("department")
-        team = attrs.get("team")
+        branch = attrs.get("branch", getattr(self.instance, "branch", None))
+        department = attrs.get("department", getattr(self.instance, "department", None))
+        team = attrs.get("team", getattr(self.instance, "team", None))
         manager = attrs.get("manager")
         position = attrs.get("position")
 
@@ -423,7 +528,7 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
                         "Department does not belong to your company."
                 })
 
-            if branch and department.branch_id != branch.id:
+            if branch and department.branch_id is not None and department.branch_id != branch.id:
                 raise serializers.ValidationError({
                     "department":
                         "Department must belong to the selected branch."
@@ -442,7 +547,7 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
                         "Team must belong to the selected department."
                 })
 
-            if branch and team.branch_id != branch.id:
+            if branch and team.branch_id is not None and team.branch_id != branch.id:
                 raise serializers.ValidationError({
                     "team":
                         "Team must belong to the selected branch."
@@ -467,8 +572,81 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
                     "position":
                         "Position does not belong to your company."
                 })
+            if not position.is_active:
+                raise serializers.ValidationError({"position": "Choose an active position."})
+            from company_setup.capability_policy import SetupCapabilityPolicy
+            if position_changed:
+                SetupCapabilityPolicy.validate_preset(
+                    actor=user,
+                    capabilities=list(position.capability_grants.filter(
+                        company=company, is_active=True,
+                    ).values_list("capability", flat=True)),
+                )
 
         return attrs
+
+
+class EmployeeDirectorySerializer(EmployeeProfileSerializer):
+    class Meta(EmployeeProfileSerializer.Meta):
+        fields = (
+            "id", "employee_name", "email", "company_name", "branch_name",
+            "department_name", "team_name", "manager_name", "position_name",
+            "employee_id", "employment_type", "status", "user", "company",
+            "branch", "department", "team", "manager", "position",
+            "allowed_actions",
+        )
+        read_only_fields = fields
+
+
+class EmployeeBranchCountSerializer(serializers.Serializer):
+    id = serializers.IntegerField(allow_null=True)
+    name = serializers.CharField()
+    total = serializers.IntegerField()
+    current = serializers.IntegerField()
+    active = serializers.IntegerField()
+    on_leave = serializers.IntegerField()
+    suspended = serializers.IntegerField()
+    terminated = serializers.IntegerField()
+
+
+class EmployeeAccessActionSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    sensitive = serializers.BooleanField()
+    company_wide = serializers.BooleanField()
+    branches = serializers.ListField(child=serializers.DictField())
+    sources = serializers.ListField(child=serializers.CharField())
+
+
+class EmployeeAccessSummarySerializer(serializers.Serializer):
+    employee = serializers.IntegerField()
+    account_active = serializers.BooleanField()
+    actions = EmployeeAccessActionSerializer(many=True)
+
+
+class PrimaryPositionPreviewInputSerializer(serializers.Serializer):
+    position = serializers.IntegerField(min_value=1)
+
+
+class EmployeeAccessChangeSerializer(serializers.Serializer):
+    employee_name = serializers.CharField()
+    before = EmployeeAccessSummarySerializer()
+    after = EmployeeAccessSummarySerializer()
+
+
+class EmployeeDirectoryOverviewSerializer(serializers.Serializer):
+    scope = serializers.ChoiceField(choices=("COMPANY", "BRANCHES", "PERSONAL", "NONE"))
+    total_profiles = serializers.IntegerField()
+    current_employees = serializers.IntegerField()
+    active = serializers.IntegerField()
+    on_leave = serializers.IntegerField()
+    suspended = serializers.IntegerField()
+    terminated = serializers.IntegerField()
+    awaiting_position = serializers.IntegerField()
+    workspace_accounts = serializers.IntegerField(allow_null=True)
+    accounts_without_profile = serializers.IntegerField(allow_null=True)
+    pending_invitations = serializers.IntegerField(allow_null=True)
+    self_profile_id = serializers.IntegerField(allow_null=True)
+    branches = EmployeeBranchCountSerializer(many=True)
 
 
 class EmployeeTransferSerializer(serializers.ModelSerializer):

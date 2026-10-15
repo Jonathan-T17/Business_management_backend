@@ -1,0 +1,4 @@
+from pathlib import Path
+path=Path('.notification-fix/formsTypes.ts');text=path.read_text(encoding='utf-8-sig').replace('"LOCATION";', '"LOCATION" | "ITEM_LIST";').replace('workflow?: number | null;', 'source_starter?: string; starter_code?: string; workflow?: number | null;');path.write_text(text,encoding='utf-8')
+path=Path('.notification-fix/FormDesigner.tsx');text=path.read_text(encoding='utf-8-sig').replace('"PHONE","LOCATION"]','"PHONE","LOCATION","ITEM_LIST"]').replace('DATETIME:"Date and time"','DATETIME:"Date and time",ITEM_LIST:"Items and quantities"');path.write_text(text,encoding='utf-8')
+path=Path('.notification-fix/CreateForm.tsx');text=path.read_text().replace('onChoose={setStarter}', 'onChoose={form=>setStarter({...form,starter_code:form.code})}');path.write_text(text,encoding='utf-8')

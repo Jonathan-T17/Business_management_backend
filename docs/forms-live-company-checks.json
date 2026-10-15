@@ -1,0 +1,72 @@
+[
+  {
+    "name": "Attendance correction",
+    "overflow": false,
+    "text": "← Back to forms\nAttendance correction\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nWhere this form goes\n\nYour submission follows these review steps in order. The final reviewer approves or rejects the request.\n\n1. Assigned supervisor review\n\nAssigned supervisor review: no active reviewer was found for your current reporting location. Confirm the reporting line before submitting.\n\nAttendance correction\n\nRequest correction of an attendance entry from the responsible supervisor.\n\n* Required · Preview: answers are not saved.\n\nAbout this entry\nYour name*Automatic\n\nFrom your profile; cannot be changed here.\n\nCompany*Automatic\n\nFrom your company workspace.\n\nYour branch or work location*Prefilled\n\nYour branch or work location; change if needed.\n\nAttendance date*Prefilled\n\nToday by default; change for another date.\n\nForm details\nCorrection requested*\n\nDescribe the recorded entry and the change you are requesting.\n\nReason*\n\nExplain why this request, correction or return is needed.\n\nApproval settings\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "Branch operations summary",
+    "overflow": false,
+    "text": "← Back to forms\nBranch operations summary\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nTemplate update available\nWhere this form goes\n\nSaved without an approval route.\n\nBranch operations summary\n\nBranch managers summarise performance and support needed for headquarters.\n\n* Required · Preview: answers are not saved.\n\nPeriod starting*\n\nChoose the date this entry refers to.\n\nPeriod ending*\n\nChoose the date this entry refers to.\n\nBranch results*\n\nSummarise completed work and measurable results for this reporting period.\n\nIssues and risksOptional\n\nDescribe problems or risks that need attention. Leave blank if there are none.\n\nSupport requested from headquartersOptional\n\nDescribe what headquarters should provide or decide, and when it is needed.\n\nApproval settings\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "Confirm materials received",
+    "overflow": false,
+    "text": "← Back to forms\nConfirm materials received\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nWhere this form goes\n\nSaved without an approval route.\n\nConfirm materials received\n\nThe receiving branch confirms deliveries, missing items and damage.\n\n* Required · Preview: answers are not saved.\n\nAbout this entry\nYour name*Automatic\n\nFrom your profile; cannot be changed here.\n\nCompany*Automatic\n\nFrom your company workspace.\n\nYour branch or work location*Prefilled\n\nYour branch or work location; change if needed.\n\nDate received*Prefilled\n\nToday by default; change for another date.\n\nForm details\nRequest reference*\n\nUse the reference shown on the related request. Copy it exactly so the records can be matched.\n\nDelivery reference*\n\nUse the delivery-note or transport reference supplied with the materials.\n\nItems and quantities*\n\nItem 1\n\nItem name\nQuantity\nUnit\nRemove item 1\n+ Add another item\n\nAdd one row per item. Enter its name, quantity and unit, for example Cement, 25, bags.\n\nDelivery condition*\nSelect delivery condition\nComplete and in good condition\nPartial delivery\nDamage or discrepancy\n\nChoose the option that describes this entry.\n\nAdditional details\nMissing or damaged itemsOptional\n\nList missing, damaged or incorrect items and their quantities. Leave blank if everything matches.\n\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "Daily collections summary",
+    "overflow": false,
+    "text": "← Back to forms\nDaily collections summary\n\nAvailable to the published audience · Version 2\n\nFill in form\nEdit form\n\nChanges are saved as a draft revision. Previous entries stay unchanged.\n\nWhere this form goes\n\nSaved without an approval route.\n\nDaily collections summary\n\nSummarise daily collections and differences for the responsible manager.\n\n* Required · Preview: answers are not saved.\n\nForm details\nCollection day*\n\nChoose the date this entry refers to.\n\nTotal collected*\n\nAdd the included collections and enter their total as a number.\n\nCurrency*\n\nEnter the currency used for the amount, such as RWF, USD or EUR.\n\nIncluded receipt references*\n\nList the receipts included in this total, one reference per line.\n\nDifferences or unresolved collectionsOptional\n\nExplain any difference between what was expected and what was recorded. Leave blank if the amounts or counts agree.\n\nAbout this entry\nYour name*Automatic\n\nFrom your profile; cannot be changed here.\n\nCompany*Automatic\n\nFrom your company workspace.\n\nYour branch or work location*Prefilled\n\nYour branch or work location; change if needed.\n\nApproval settings\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "Daily report",
+    "overflow": false,
+    "text": "← Back to forms\nDaily report\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nWhere this form goes\n\nSaved without an approval route.\n\nDaily report\n\nRecord today’s completed work, difficulties and plans for your supervisor.\n\n* Required · Preview: answers are not saved.\n\nAbout this entry\nYour name*Automatic\n\nFrom your profile; cannot be changed here.\n\nCompany*Automatic\n\nFrom your company workspace.\n\nYour branch or work location*Prefilled\n\nYour branch or work location; change if needed.\n\nDay being reported*Prefilled\n\nToday by default; change for another date.\n\nForm details\nWork completed*\n\nDescribe what you did today and the result. Include quantities where useful.\n\nAdditional details\nDifficulties and support neededOptional\n\nDescribe anything that delayed or prevented your work, and the help you need. Leave blank if there were no difficulties.\n\nPlans for the next working dayOptional\n\nDescribe what you plan to do next and any help or resources needed.\n\nApproval settings\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "Employee service request",
+    "overflow": false,
+    "text": "← Back to forms\nEmployee service request\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nTemplate update available\nWhere this form goes\n\nSaved without an approval route.\n\nEmployee service request\n\nRequest an administrative service. Route it to the appropriate company office.\n\n* Required · Preview: answers are not saved.\n\nService needed*\n\nName the administrative help you need.\n\nRequest details*\n\nProvide the information the responsible person needs to understand and process your request.\n\nNeeded byOptional\n\nChoose the latest date you need the requested goods, service or work completed.\n\nApproval settings\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "Equipment issue and return",
+    "overflow": false,
+    "text": "← Back to forms\nEquipment issue and return\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nTemplate update available\nWhere this form goes\n\nSaved without an approval route.\n\nEquipment issue and return\n\nTrack equipment handed over or returned to stores.\n\n* Required · Preview: answers are not saved.\n\nHandover date*\n\nChoose the date this entry refers to.\n\nHandover type*\nSelect handover type\nIssue equipment\nReturn equipment\n\nChoose the option that describes this entry.\n\nEquipment and asset reference*\n\nName the equipment and include its asset number if available.\n\nResponsible person or position*\n\nName the person or position responsible for the equipment.\n\nEquipment condition*\n\nDescribe the equipment condition and any damage or faults.\n\nApproval settings\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "Expense approval request",
+    "overflow": false,
+    "text": "← Back to forms\nExpense approval request\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nTemplate update available\nWhere this form goes\n\nSaved without an approval route.\n\nExpense approval request\n\nRequest approval before incurring a company expense.\n\n* Required · Preview: answers are not saved.\n\nExpense purpose*\n\nExplain why this work, payment or request is needed and what it will achieve.\n\nEstimated amount*\n\nEnter the amount as a number. Use the currency field to identify the currency.\n\nCurrency*\n\nEnter the currency used for the amount, such as RWF, USD or EUR.\n\nNeeded by*\n\nChoose the latest date you need the requested goods, service or work completed.\n\nSupporting detailsOptional\n\nProvide the information the responsible person needs to understand and process your request.\n\nApproval settings\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "Goods or materials collection",
+    "overflow": false,
+    "text": "← Back to forms\nGoods or materials collection\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nWhere this form goes\n\nSaved without an approval route.\n\nGoods or materials collection\n\nRecord goods or materials collected, quantities and units.\n\n* Required · Preview: answers are not saved.\n\nCollection date*\nGoods or material collected*\nQuantity collected*\nUnit (for example kg, litres or items)*\nCollection notesOptional\nApproval settings\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "TEST - Food Production daily report",
+    "overflow": false,
+    "text": "← Back to forms\nTEST - Food Production daily report\n\nAvailable to the published audience · Version 2\n\nEdit form\n\nChanges are saved as a draft revision. Previous entries stay unchanged.\n\nWhere this form goes\n\nYour submission follows these review steps in order. The final reviewer approves or rejects the request.\n\n1. TEST - Branch manager review\nTEST - Food Production daily report\n\nBrowser verification only. Sample information, not operational records.\n\n* Required · Preview: answers are not saved.\n\nWork completed (test only)*\nBlockers (test only)Optional\nApproval settings\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "TEST - Materials Dispatch",
+    "overflow": false,
+    "text": "← Back to forms\nTEST - Materials Dispatch\n\nNot available yet — review, then make available · Version 3\n\nEdit form\nMake available\nTemplate update available\nWhere this form goes\n\nSaved without an approval route.\n\nTEST - Materials Dispatch\n\nTEST ONLY: Synthetic materials journey. No purchasing, payments or inventory changes.\n\n* Required · Preview: answers are not saved.\n\nApproved request reference*\nDispatch date*\nReceiving branch or location*\nItems and quantities*\n\nItem 1\n\nItem name\nQuantity\nUnit\nRemove item 1\n+ Add another item\n\nAdd each item with its quantity and unit.\n\nDelivery or transport referenceOptional\nDelivery instructionsOptional\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "TEST - Materials Receipt",
+    "overflow": false,
+    "text": "← Back to forms\nTEST - Materials Receipt\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nTemplate update available\nWhere this form goes\n\nSaved without an approval route.\n\nTEST - Materials Receipt\n\nTEST ONLY: Synthetic materials journey. No purchasing, payments or inventory changes.\n\n* Required · Preview: answers are not saved.\n\nRequest reference*\nDelivery reference*\nDate received*\nItems and quantities*\n\nItem 1\n\nItem name\nQuantity\nUnit\nRemove item 1\n+ Add another item\n\nAdd each item with its quantity and unit.\n\nMissing or damaged itemsOptional\nDelivery condition*\nSelect delivery condition\nComplete and in good condition\nPartial delivery\nDamage or discrepancy\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "TEST - Materials Request",
+    "overflow": false,
+    "text": "← Back to forms\nTEST - Materials Request\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nTemplate update available\nWhere this form goes\n\nYour submission follows these review steps in order. The final reviewer approves or rejects the request.\n\n1. TEST - Branch manager review\n2. TEST - Headquarters approval\nTEST - Materials Request\n\nTEST ONLY: Synthetic materials journey. No purchasing, payments or inventory changes.\n\n* Required · Preview: answers are not saved.\n\nItems and quantities*\n\nItem 1\n\nItem name\nQuantity\nUnit\nRemove item 1\n+ Add another item\n\nAdd each item with its quantity and unit.\n\nWhy are these materials needed?*\nNeeded by*\nDelivery location*\nPriority*\nSelect priority\nNormal\nUrgent\nApproval settings\nDelete from company forms\nMore options"
+  },
+  {
+    "name": "TEST - Materials Return",
+    "overflow": false,
+    "text": "← Back to forms\nTEST - Materials Return\n\nNot available yet — review, then make available · Version 2\n\nEdit form\nMake available\nTemplate update available\nWhere this form goes\n\nSaved without an approval route.\n\nTEST - Materials Return\n\nTEST ONLY: Synthetic materials journey. No purchasing, payments or inventory changes.\n\n* Required · Preview: answers are not saved.\n\nOriginal request or delivery reference*\nReturn date*\nItems and quantities*\n\nItem 1\n\nItem name\nQuantity\nUnit\nRemove item 1\n+ Add another item\n\nAdd each item with its quantity and unit.\n\nReason for return*\nReturn destination*\nDelete from company forms\nMore options"
+  }
+]

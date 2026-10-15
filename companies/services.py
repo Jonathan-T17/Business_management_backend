@@ -100,7 +100,8 @@ class CompanyInviteService:
         user.company = invite.company
         user.role = invite.role
         user.is_staff = False
-        user.save(update_fields=["company", "role", "is_staff"])
+        user.position_required = position is None and invite.role in {Roles.EMPLOYEE, Roles.MANAGER}
+        user.save(update_fields=["company", "role", "is_staff", "position_required"])
         from organizations.models import EmployeeProfile
         if position:
             user.branch = position.branch
@@ -171,11 +172,14 @@ class BranchLifecycleService:
     @staticmethod
     @transaction.atomic
     def deactivate(*, branch, actor, reason, request=None):
+        company = Company.objects.select_for_update().get(pk=branch.company_id)
         branch = Branch.objects.select_for_update().get(pk=branch.pk)
         if actor.company_id != branch.company_id or not CapabilityService.has(actor, Capabilities.MANAGE_ORGANIZATION):
             raise PermissionDenied("You cannot manage this branch.")
         if not reason.strip():
             raise ValidationError("A reason is required.")
+        if company.headquarters_id == branch.pk:
+            raise ValidationError("Choose another headquarters before deactivating this location.")
         blockers = []
         active_users = branch.users.filter(is_active=True, is_deleted=False).count()
         if active_users:

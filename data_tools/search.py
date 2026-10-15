@@ -137,7 +137,7 @@ class GlobalSearchService:
         )[:limit]
         return [SearchResult(
             type="form_submission", id=str(item.pk), title=str(item.template),
-            subtitle="Form submission", url=f"/form-submissions/{item.pk}", status=item.status,
+            subtitle="Form submission", url=f"/forms/submissions/{item.pk}", status=item.status,
         ) for item in queryset]
 
     @staticmethod

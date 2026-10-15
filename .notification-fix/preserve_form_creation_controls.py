@@ -1,0 +1,2 @@
+from pathlib import Path
+p=Path('.notification-fix/simple-forms/src/components/forms/CompanyFormsWorkspace.tsx');s=p.read_text(encoding='utf-8').replace('import { workspaceAccess } from "@/utils/workspace";','import { CAPABILITIES, hasCapability } from "@/utils/capabilities";').replace(' const access=workspaceAccess(user);',' const canCreate=Boolean(user&&!user.awaiting_position&&hasCapability(user.capabilities,CAPABILITIES.MANAGE_FORM_TEMPLATES));').replace('access.formManagement','canCreate');p.write_text(s,encoding='utf-8')

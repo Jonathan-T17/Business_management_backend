@@ -13,6 +13,7 @@ from subscriptions.models import Subscription
 
 from notifications.models import EmailDeliveryLog
 
+from security.services import current_sessions
 from security.models import (
     ActiveSession,
     FailedLoginAttempt,
@@ -64,9 +65,7 @@ class PlatformDashboardService:
         )
 
         active_sessions = (
-            ActiveSession.objects.filter(
-                is_active=True
-            )
+            current_sessions()
         )
 
         failed_logins_24h = (

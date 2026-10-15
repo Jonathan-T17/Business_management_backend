@@ -32,6 +32,11 @@ class CompanyEmailService:
         if not recipient_email:
             return None
 
+        if company:
+            from companies.models import Company
+            if Company.objects.filter(pk=company.pk, archived_at__isnull=False).exists():
+                return None
+
         if (
             company
             and not company.email_notifications_enabled
@@ -124,9 +129,11 @@ class CompanyEmailService:
                 "text/html",
             )
 
-            email.send(
+            sent = email.send(
                 fail_silently=False
             )
+            if sent != 1:
+                raise RuntimeError("The email backend did not accept the message.")
 
             log.status = "SENT"
             log.sent_at = timezone.now()

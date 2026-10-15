@@ -29,6 +29,30 @@ class CapabilityService:
         )
 
     @classmethod
+    def is_platform_operator(cls, user):
+        return bool(cls._authenticated(user) and getattr(user, "is_superuser", False)
+                    and getattr(user, "is_staff", False) and getattr(user, "is_active", False)
+                    and not getattr(user, "is_deleted", False)
+                    and not getattr(user, "must_change_password", False))
+
+    @classmethod
+    def platform_capabilities(cls, user):
+        if not cls.is_platform_operator(user):
+            return set()
+        duty = getattr(user, "platform_duty", "OWNER")
+        if duty == "OWNER":
+            return set(Capabilities.PLATFORM_ONLY)
+        presets = {
+            "SECURITY": {Capabilities.VIEW_PLATFORM_SECURITY, Capabilities.MANAGE_PLATFORM_SECURITY,
+                         Capabilities.VIEW_PLATFORM_AUDIT, Capabilities.VIEW_PLATFORM_HEALTH},
+            "SUPPORT": {Capabilities.PLATFORM_SUPPORT, Capabilities.VIEW_PLATFORM_SUPPORT,
+                        Capabilities.MANAGE_PLATFORM_SUPPORT},
+            "SUBSCRIPTIONS": {Capabilities.MANAGE_PLATFORM_SUBSCRIPTIONS},
+            "AUDITOR": {Capabilities.VIEW_PLATFORM_AUDIT, Capabilities.VIEW_PLATFORM_HEALTH},
+        }
+        return presets.get(duty, set())
+
+    @classmethod
     def _tenant_capabilities(cls, user, *, company_only=False):
         if not cls.is_tenant_identity(user):
             return set()
@@ -38,6 +62,10 @@ class CapabilityService:
             return set()
 
         result = set()
+        # Ordinary published company forms are a membership feature. This grants
+        # no permission to read other employees' submissions or make decisions.
+        if not company_only and user.is_active and user.company.is_active and not getattr(user, "is_deleted", False) and user.role in {Roles.ADMIN, Roles.MANAGER, Roles.EMPLOYEE}:
+            result.add(Capabilities.USE_FORMS)
 
         # Company Administrator is configuration authority, not automatic
         # confidential-data authority. The preset intentionally excludes
@@ -54,16 +82,8 @@ class CapabilityService:
                 ).values_list("capability", flat=True)
             )
 
-        profile = getattr(user, "employee_profile", None)
-        if profile and profile.status == "ACTIVE" and getattr(profile, "position_id", None) and profile.position.is_active and profile.position.company_id == user.company_id:
-            result.update(
-                profile.position.capability_grants.filter(
-                    company_id=user.company_id,
-                    is_active=True,
-                ).values_list("capability", flat=True)
-            )
-
         from core.position_scope import PositionScope
+        result.update(PositionScope.primary_capabilities(user, company_only=company_only))
         result.update(PositionScope.capabilities(user, company_only=company_only))
 
         # Defense in depth against manipulated DB/API grants.
@@ -80,7 +100,7 @@ class CapabilityService:
             return False
 
         if cls.is_platform_identity(user):
-            return capability in Capabilities.PLATFORM_ONLY
+            return capability in cls.platform_capabilities(user)
 
         if capability in Capabilities.PLATFORM_ONLY:
             return False
@@ -97,6 +117,6 @@ class CapabilityService:
             return set()
 
         if cls.is_platform_identity(user):
-            return set(Capabilities.PLATFORM_ONLY)
+            return cls.platform_capabilities(user)
 
         return cls._tenant_capabilities(user)

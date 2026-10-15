@@ -16,29 +16,51 @@ class PlatformCompanySummarySerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or not IsPlatformSuperUser().has_permission(request, None):
             return []
-        return ["DEACTIVATE" if obj.is_active else "REACTIVATE"]
+        if obj.archived_at:
+            from django.utils import timezone
+            return ["RESTORE"] if obj.recovery_until and timezone.now() < obj.recovery_until else []
+        return ["DEACTIVATE" if obj.is_active else "REACTIVATE", "ARCHIVE"]
 
     class Meta:
         model = Company
         fields = ("id","name","slug","is_active","users_count","created_at","updated_at",
                   "email","phone","website","address","branches_count","projects_count",
-                  "subscription_plan","subscription_active","allowed_actions")
+                  "subscription_plan","subscription_active","allowed_actions",
+                  "archived_at","recovery_until","archive_reason","deletion_hold_reason")
         read_only_fields = fields
 
 class PlatformUserSummarySerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source="company.name", read_only=True)
+    allowed_actions = serializers.SerializerMethodField()
+
+    def get_allowed_actions(self, obj) -> list[str]:
+        from core.capability_service import CapabilityService
+        request = self.context.get("request")
+        from core.capabilities import Capabilities
+        if not request or not CapabilityService.has(request.user, Capabilities.PLATFORM_ADMIN):
+            return []
+        if CapabilityService.is_platform_identity(obj) or obj.is_deleted:
+            return []
+        actions = ["TERMINATE_SESSIONS", "REQUIRE_PASSWORD_RESET"]
+        if not obj.is_active:
+            actions.append("REACTIVATE")
+        else:
+            actions.append("DEACTIVATE")
+        return actions
+
     class Meta:
         model = User
-        fields = ("id","email","full_name","role","company","company_name","is_active","email_verified","account_state","date_joined")
+        fields = ("id","email","full_name","role","company","company_name","is_active","email_verified","account_state","date_joined","allowed_actions")
         read_only_fields = fields
 
 class PlatformSessionSerializer(serializers.ModelSerializer):
     allowed_actions = serializers.SerializerMethodField()
 
     def get_allowed_actions(self, obj) -> list[str]:
-        from .permissions import IsPlatformSuperUser
+        from core.capability_service import CapabilityService
+        from core.capabilities import Capabilities
         request = self.context.get("request")
-        return ["TERMINATE"] if request and obj.is_active and IsPlatformSuperUser().has_permission(request, None) else []
+        return ["TERMINATE"] if request and obj.is_active and CapabilityService.has(request.user, Capabilities.MANAGE_PLATFORM_SECURITY) else []
 
     user_email = serializers.CharField(source="user.email", read_only=True)
     company_name = serializers.CharField(source="company.name", read_only=True)
@@ -95,6 +117,12 @@ class PlatformPlanSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class PlatformSubscriptionRenewSerializer(serializers.Serializer):
+    expires_at = serializers.DateTimeField(allow_null=True)
+    reason = serializers.CharField(max_length=1000, trim_whitespace=True)
+    password = serializers.CharField(write_only=True, trim_whitespace=False, max_length=256)
+
+
 class PlatformPlanChangeSerializer(serializers.Serializer):
     from subscriptions.models import Plan
     plan_id = serializers.PrimaryKeyRelatedField(queryset=Plan.objects.filter(is_active=True))
@@ -113,7 +141,7 @@ class PlatformSubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         from subscriptions.models import Subscription
         model = Subscription
-        fields = ("id", "company", "company_name", "plan", "plan_name", "max_users", "max_projects", "users_used", "projects_used", "is_active", "is_valid", "started_at", "expires_at")
+        fields = ("id", "company", "company_name", "plan", "plan_name", "max_users", "max_projects", "users_used", "projects_used", "is_active", "is_valid", "started_at", "expires_at", "renewed_at")
         read_only_fields = fields
 
 

@@ -9,11 +9,12 @@ class SupportMessageSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 class SupportTicketListSerializer(serializers.ModelSerializer):
+    company_name = serializers.CharField(source="company.name", read_only=True)
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True)
     assigned_to_name = serializers.CharField(source="assigned_to.full_name", read_only=True)
     class Meta:
         model = SupportTicket
-        fields = ("id","reference","category","sensitivity","subject","priority","requested_priority","status","created_by_name","assigned_to_name","created_at","updated_at")
+        fields = ("id","reference","company_name","category","sensitivity","subject","priority","requested_priority","status","created_by_name","assigned_to_name","created_at","updated_at")
         read_only_fields = fields
 
 class SupportTicketDetailSerializer(SupportTicketListSerializer):
@@ -36,6 +37,11 @@ class SupportTicketCreateSerializer(serializers.Serializer):
     description = serializers.CharField()
     requested_priority = serializers.ChoiceField(choices=SupportTicket.PRIORITY_CHOICES, default="NORMAL")
     context = serializers.JSONField(required=False, default=dict)
+
+    def validate_context(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Provide diagnostic context as an object.")
+        return value
 
     def create(self, validated_data):
         from .services import SupportTicketService

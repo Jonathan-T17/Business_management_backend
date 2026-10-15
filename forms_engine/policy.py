@@ -18,4 +18,9 @@ class FormSubmissionDisclosurePolicy:
         fields = snapshot.get('fields', []) if isinstance(snapshot, dict) else snapshot
         return {f['key']:f.get('classification','NORMAL') for f in fields if isinstance(f,dict) and f.get('key')}
     @classmethod
-    def data_for(cls,*,submission,user): return FieldRedactionService.redact_mapping(user=user,data=submission.data,schema=cls.schema_for(submission),owner_id=getattr(submission,'submitted_by_id',None))
+    def data_for(cls,*,submission,user):
+        from .access import FormAccess
+        if FormAccess.shared_confidential(user, submission):
+            from copy import deepcopy
+            return deepcopy(submission.data)
+        return FieldRedactionService.redact_mapping(user=user,data=submission.data,schema=cls.schema_for(submission),owner_id=getattr(submission,'submitted_by_id',None))

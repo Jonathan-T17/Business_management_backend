@@ -15,8 +15,12 @@ def validate_uploaded_file(file, *, max_size):
     allowed = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".txt", ".csv", ".docx", ".xlsx", ".pptx"}
     if not file or not 0 < file.size <= max_size:
         raise ValidationError({"file": "The file is empty or exceeds the upload limit."})
-    if Path(file.name).suffix.lower() not in allowed:
+    extension = Path(file.name).suffix.lower()
+    if extension not in allowed:
         raise ValidationError({"file": "This file type is not supported."})
+    from .file_validation import inspect_content, scan_content
+    scan_content(file)
+    inspect_content(file, extension)
     return mimetypes.guess_type(file.name)[0] or "application/octet-stream"
 
 
@@ -87,6 +91,7 @@ class AttachmentService:
             raise PermissionDenied("You cannot attach files to this object.")
         from subscriptions.services import SubscriptionService
         type(parent.company).objects.select_for_update().get(pk=parent.company_id)
+        # Every service caller needs verification; a supplied MIME is not evidence.
         mime_type = validate_uploaded_file(file, max_size=MAX_ATTACHMENT_SIZE)
         if not SubscriptionService.can_upload(parent.company, additional_bytes=file.size):
             raise ValidationError({'file': 'Your subscription storage limit has been reached.'})

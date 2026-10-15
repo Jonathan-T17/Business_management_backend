@@ -1,0 +1,7 @@
+import { ClipboardList, Clock3, CircleCheck, Inbox } from "lucide-react";
+import type { DashboardMetric } from "@/types/analytics";
+const labels: Record<string, string> = { "Form submissions": "Saved form entries", "Submissions awaiting review": "Entries awaiting review", "Approved submissions": "Approved entries" };
+const icons = [ClipboardList, Clock3, CircleCheck, Inbox];
+export function MetricGrid({ metrics }: { metrics: DashboardMetric[] }) {
+  return <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{metrics.map((metric,index) => { const Icon=icons[index%icons.length]; return <section key={metric.key} className="sb-home-metric"><div className="flex items-start justify-between gap-2"><p className="text-xs font-medium leading-5 text-[var(--muted)] sm:text-sm">{labels[metric.label] ?? metric.label}</p><Icon size={19} className="shrink-0 text-[var(--accent-text)]" aria-hidden="true"/></div><p className="mt-3 text-3xl font-bold tracking-tight tabular-nums text-[var(--ink)]">{metric.value}</p>{metric.period && <p className="mt-1 text-xs text-[var(--muted)]">{metric.period}</p>}{metric.change !== undefined && metric.change !== null && <p className="mt-1 text-xs text-[var(--muted)]">{metric.change > 0 ? "+" : ""}{metric.change}% change</p>}</section>;})}</div>;
+}

@@ -38,3 +38,8 @@ urlpatterns += [path('capabilities/', SetupCapabilitiesView.as_view(), name='set
 
 from .position_access import PositionAccessView
 urlpatterns += [path("positions/<int:pk>/access/", PositionAccessView.as_view(), name="setup-position-access")]
+from .headquarters import HeadquartersView
+urlpatterns += [path("headquarters/", HeadquartersView.as_view(), name="setup-headquarters")]
+
+from .position_access import PositionAccessPreviewView
+urlpatterns += [path("positions/<int:pk>/access/preview/", PositionAccessPreviewView.as_view(), name="setup-position-access-preview")]

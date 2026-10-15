@@ -1,5 +1,7 @@
 from django.urls import path
 from .maintenance import MaintenanceCatalogue, MaintenanceRecords, MaintenanceChoices
+from .security_summary import SecuritySummaryView
+from .access import PlatformAccessView
 from rest_framework.routers import DefaultRouter
 
 from .views import (
@@ -20,6 +22,11 @@ from .views import (
 
 
 router = DefaultRouter()
+from .workspace_lifecycle import WorkspaceDeletionViewSet, WorkspacePurgeReceiptViewSet
+router.register("workspace-deletion", WorkspaceDeletionViewSet, basename="workspace-deletion")
+router.register("workspace-purge-receipts", WorkspacePurgeReceiptViewSet, basename="workspace-purge-receipts")
+from .incidents import IncidentViewSet
+router.register("security/incidents", IncidentViewSet, basename="platform-incidents")
 from support.views import PlatformSupportTicketViewSet
 router.register("support/tickets", PlatformSupportTicketViewSet, basename="platform-support")
 router.register("plans", PlatformPlanViewSet, basename="platform-plans")
@@ -88,6 +95,8 @@ router.register(
 
 
 urlpatterns = [
+    path("security/access/", PlatformAccessView.as_view()),
+    path("security/summary/", SecuritySummaryView.as_view()),
     path("administration/", MaintenanceCatalogue.as_view()),
     path("administration/<slug:key>/", MaintenanceRecords.as_view()),
     path("administration/<slug:key>/choices/<str:field>/", MaintenanceChoices.as_view()),

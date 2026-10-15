@@ -32,7 +32,7 @@ class Authorization:
             return True
 
         company = getattr(user, "company", None)
-        return bool(company and getattr(company, "is_active", False))
+        return bool(company and getattr(company, "is_active", False) and not company.archived_at)
 
     @staticmethod
     def same_tenant(user, obj):

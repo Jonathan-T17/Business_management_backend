@@ -118,6 +118,8 @@ class FieldOperationService:
         else:
             activity.save(update_fields=["status", "updated_at"])
         create_audit_log(user=user, company=activity.company, request=request, action="UPDATE", description="Field activity completed.", obj=activity)
+        from records_management.finalizer import OfficialRecordFinalizer
+        OfficialRecordFinalizer.finalize(source=activity, actor=user, request=request)
         return activity
 
 

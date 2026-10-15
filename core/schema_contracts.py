@@ -161,7 +161,8 @@ contract("analytics_ai.overview.AnalyticsOverviewView", get=extend_schema(parame
 
 HealthStatus = shape("HealthStatus", status=s.CharField())
 Health = shape("PlatformHealth", status=s.CharField(), database=HealthStatus, cache=HealthStatus,
-    email=shape("EmailHealth", status=s.CharField(), backend=s.CharField()), timestamp=s.DateTimeField())
+    email=shape("EmailHealth", status=s.CharField(), backend=s.CharField()), timestamp=s.DateTimeField(),
+    services=s.DictField(child=shape("MonitoredService", status=s.CharField(), detail=s.CharField(required=False), last_run=s.DateTimeField(required=False))))
 contract("platform_admin.views.PlatformHealthView", get=extend_schema(responses=Health))
 contract("platform_admin.views.PlatformSettingsView", get=extend_schema(responses=shape("PlatformSettings",
     editable=s.BooleanField(), message=s.CharField(), settings=shape("DeploymentSettings",

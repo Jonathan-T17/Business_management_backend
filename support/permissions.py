@@ -5,7 +5,7 @@ from core.capability_service import CapabilityService
 class CanUseSupport(BasePermission):
     def has_permission(self, request, view):
         u = request.user
-        return bool(u.is_authenticated and u.company_id and u.company and (u.company.is_active or getattr(view, "allow_inactive_company_support", False)))
+        return bool(CapabilityService.is_tenant_identity(u) and u.company and (u.company.is_active or getattr(view, "allow_inactive_company_support", False)))
 
 class IsPlatformSupport(BasePermission):
     def has_permission(self, request, view):

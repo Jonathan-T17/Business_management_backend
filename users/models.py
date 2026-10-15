@@ -27,6 +27,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         editable=False,
     )
 
+    # Invitation membership is recorded independently of the disposable invitation.
+    position_required = models.BooleanField(default=False, editable=False)
+
     phone_number = models.CharField(max_length=20, blank=True)
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
     user_timezone = models.CharField(max_length=100, default="UTC")
@@ -39,6 +42,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_login_ip = models.GenericIPAddressField(blank=True, null=True)
     last_activity = models.DateTimeField(null=True, blank=True)
     mfa_enabled = models.BooleanField(default=False)
+    platform_duty = models.CharField(max_length=20, default="OWNER", editable=False,
+        choices=(("OWNER", "Platform owner"), ("SECURITY", "Security operator"),
+                 ("SUPPORT", "Customer support"), ("SUBSCRIPTIONS", "Subscription operator"),
+                 ("AUDITOR", "Read-only auditor")))
     must_change_password = models.BooleanField(
         default=False,
     )

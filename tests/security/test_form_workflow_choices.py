@@ -1,6 +1,18 @@
+from company_setup.setup_contract import SETUP_VERSION
 import pytest
 from rest_framework.test import APIClient
-from rest_framework_simplejwt.tokens import AccessToken
+
+from django.test import RequestFactory
+from security.services import create_active_session
+from rest_framework_simplejwt.tokens import RefreshToken
+
+def bound_access_token(user):
+    refresh = RefreshToken.for_user(user)
+    session = create_active_session(RequestFactory().get("/"), user, refresh["jti"])
+    refresh["sid"] = str(session.pk)
+    return refresh.access_token
+
+
 from companies.models import Company
 from company_setup.models import CompanySetupState
 from forms_engine.models import FormSubmission
@@ -16,7 +28,7 @@ def test_form_choices_publish_and_submit_use_active_workflows(django_user_model)
     reviewer = django_user_model.objects.create_user(email='reviewer-choices@example.test', company=company,
         role='ADMIN', is_active=True, account_state='ACTIVE')
     client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(author)}')
+    client.credentials(HTTP_AUTHORIZATION=f'Bearer {bound_access_token(author)}')
     active = WorkflowDefinition.objects.create(company=company, name='Form approval', code='form', target_type='FORM_SUBMISSION')
     inactive = WorkflowDefinition.objects.create(company=company, name='Inactive', code='inactive', target_type='FORM_SUBMISSION', is_active=False)
     WorkflowDefinition.objects.create(company=other, name='Private', code='private', target_type='FORM_SUBMISSION')
@@ -34,7 +46,7 @@ def test_form_choices_publish_and_submit_use_active_workflows(django_user_model)
     template_id = response.data['id']
     assert client.post(root+template_id+'/publish/').status_code == 200
     # Runtime access only opens after setup; this fixture isolates the form journey.
-    CompanySetupState.objects.create(company=company,onboarding_completed=True,setup_version=2)
+    CompanySetupState.objects.create(company=company,onboarding_completed=True,setup_version=SETUP_VERSION)
     response = client.post('/api/v1/form-submissions/', {'template':template_id,'data':{'notes':'Checked'}}, format='json')
     assert response.status_code == 201, response.data
     submission_id = response.data['id']

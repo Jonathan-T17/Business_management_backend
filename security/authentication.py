@@ -25,4 +25,19 @@ class ActiveCompanyJWTAuthentication(JWTAuthentication):
                 code="user_inactive",
             )
 
+        from django.utils import timezone
+        from .models import ActiveSession
+        from uuid import UUID
+        try:
+            session_id = UUID(str(validated_token.get("sid", "")))
+        except (ValueError, TypeError):
+            raise AuthenticationFailed("Session requires renewal.", code="session_inactive")
+        sessions = ActiveSession.objects.filter(
+            pk=session_id, user=user, is_active=True, expires_at__gt=timezone.now(),
+        )
+        from core.capability_service import CapabilityService
+        if CapabilityService.is_platform_operator(user):
+            sessions = sessions.filter(mfa_verified_at__isnull=False)
+        if not sessions.exists():
+            raise AuthenticationFailed("Session is no longer active.", code="session_inactive")
         return user

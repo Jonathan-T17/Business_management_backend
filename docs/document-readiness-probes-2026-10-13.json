@@ -1,0 +1,36 @@
+[
+  {
+    "check": "frontend_file_field",
+    "valid": false,
+    "errors": {
+      "initial_file": [
+        "No file was submitted."
+      ]
+    },
+    "validated_visibility": null
+  },
+  {
+    "check": "cross_company_category",
+    "valid": true,
+    "errors": {},
+    "validated_visibility": null
+  },
+  {
+    "check": "cross_company_owner",
+    "valid": true,
+    "errors": {},
+    "validated_visibility": null
+  },
+  {
+    "check": "category_private_default",
+    "valid": true,
+    "errors": {},
+    "validated_visibility": null
+  },
+  {
+    "check": "branch_visibility_without_branch",
+    "valid": true,
+    "errors": {},
+    "validated_visibility": "BRANCH"
+  }
+]

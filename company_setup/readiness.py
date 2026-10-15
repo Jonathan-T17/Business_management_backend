@@ -34,8 +34,9 @@ class SetupReadinessService:
         ))
 
         branches = Branch.objects.filter(company=company, is_active=True).exists()
+        headquarters = Branch.objects.filter(company=company, pk=company.headquarters_id, is_active=True).exists()
         checks.append(Check("ACTIVE_BRANCH", "WARNING", branches,
-                            "Add an active headquarters or branch." if not branches else "Active branch configured.",
+                            "Set up headquarters; additional branches are optional." if not branches else "Active location configured.",
                             "/branches"))
 
         departments = Department.objects.filter(company=company, is_active=True).exists()
@@ -72,8 +73,9 @@ class SetupReadinessService:
             checks.append(Check("REVIEW_" + step.upper(), "INFO" if passed else "ERROR", passed,
                 "Reviewed " + label + "." if passed else "Review and confirm " + label + ".",
                 "/settings/onboarding?step=" + step, blocking=not passed))
-        checks.append(Check("STRUCTURE_LOCATION", "INFO" if branches else "ERROR", branches,
-            "Location configured." if branches else "Add your headquarters, main office or first site.", "/branches", blocking=not branches))
+        checks.append(Check("STRUCTURE_LOCATION", "INFO" if headquarters else "ERROR", headquarters,
+            "Headquarters designated." if headquarters else "Choose your company's headquarters. You can use an existing location.",
+            "/settings/onboarding?step=organization", blocking=not headquarters))
         checks.append(Check("STRUCTURE_POSITION", "INFO" if positions else "ERROR", positions,
             "Active positions configured." if positions else "Create at least one active position.", "/employees/positions", blocking=not positions))
         return checks

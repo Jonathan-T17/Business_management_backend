@@ -151,6 +151,11 @@ class AttachmentViewSet(
                 "this attachment."
             )
 
+        if instance.content_type.app_label == 'requests_app' and instance.content_type.model == 'businessrequest':
+            parent = instance.content_object
+            parent = type(parent).objects.select_for_update().get(pk=parent.pk)
+            if parent.requester_id != user.pk or parent.status not in {'DRAFT', 'RETURNED'}:
+                raise ValidationError('Attachments are locked for this request.')
         if instance.content_type.app_label == 'forms_engine' and instance.content_type.model == 'formsubmission':
             from forms_engine.attachments import can_edit_files
             parent = instance.content_object

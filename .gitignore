@@ -1,4 +1,5 @@
 # Byte-compiled / optimized / DLL files
+/.review-deps/
 __pycache__/
 *.py[codz]
 *$py.class
@@ -137,6 +138,7 @@ celerybeat.pid
 # Environments
 .env
 .env.production
+.env.staging
 staticfiles/
 .envrc
 .venv

@@ -15,7 +15,10 @@ def actions_for(user, target=None):
     capabilities = set(capabilities_for(user))
     actions = set()
 
-    if user.role == Roles.SUPERUSER:
+    from core.capability_service import CapabilityService
+    if CapabilityService.is_platform_identity(user):
+        if Capabilities.PLATFORM_ADMIN not in capabilities:
+            return []
         if target is not None and target.__class__.__name__ == "Company":
             actions.add("VIEW_SECURITY_HISTORY")
             actions.add("VIEW_SUPPORT_HISTORY")

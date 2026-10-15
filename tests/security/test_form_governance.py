@@ -63,7 +63,13 @@ def test_sensitive_configuration_does_not_grant_data(django_user_model):
     assert response.status_code==201,response.data
     pk=response.data['id'];assert client.post(f'/api/v1/form-templates/{pk}/publish/').status_code==200
     response=client.post('/api/v1/form-submissions/',{'template':pk,'data':{'salary':'500'}},format='json')
-    assert response.status_code==201,response.data
+    assert response.status_code==400,response.data
+    from forms_engine.versioning import FormTemplateVersionService
+    template=FormTemplate.objects.get(pk=pk)
+    submission=FormSubmission.objects.create(company=company,template=template,submitted_by=actor,
+        schema_snapshot=FormTemplateVersionService.field_data(template),data={'salary':'500'})
+    response=client.get(f'/api/v1/form-submissions/{submission.pk}/')
+    assert response.status_code==200,response.data
     assert response.data['data']['salary']=='[REDACTED]'
     submission_id = response.data['id']
     response = client.patch(f'/api/v1/form-submissions/{submission_id}/', {'data': {'salary': '[REDACTED]'}}, format='json')

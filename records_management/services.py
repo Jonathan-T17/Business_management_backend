@@ -56,6 +56,9 @@ class OfficialRecordService:
     @classmethod
     @transaction.atomic
     def issue(cls, *, source, record_type, title, snapshot, approval_snapshot, actor, branch=None, request=None, supersedes=None, prefix=None, classification=DataClassification.NORMAL, source_version=1):
+        # Lock a row that exists even before the first record is issued.
+        # Locking an empty record queryset cannot serialize concurrent issuance.
+        source = type(source).objects.select_for_update().get(pk=source.pk)
         company = source.company
         if actor.company_id != company.id:
             raise PermissionDenied("Tenant record issuance requires company membership.")

@@ -2,6 +2,7 @@ from .settings import *  # noqa: F401,F403
 from decouple import config
 
 DEBUG = False
+ATTACHMENT_SCAN_REQUIRED = True
 ALLOWED_HOSTS = [v.strip() for v in config("ALLOWED_HOSTS").split(",") if v.strip()]
 CSRF_TRUSTED_ORIGINS = [v.strip() for v in config("CSRF_TRUSTED_ORIGINS", default="").split(",") if v.strip()]
 CORS_ALLOWED_ORIGINS = [v.strip() for v in config("CORS_ALLOWED_ORIGINS", default="").split(",") if v.strip()]
@@ -43,6 +44,11 @@ CELERY_TASK_SOFT_TIME_LIMIT = 840
 CELERY_BEAT_SCHEDULER = "celery.beat:PersistentScheduler"
 CELERY_TIMEZONE = "UTC"
 CELERY_BEAT_SCHEDULE = {
+    "platform-service-monitoring": {
+        "task": "platform_admin.tasks.monitor_services",
+        "schedule": 300.0,
+        "options": {"expires": 240},
+    },
     "reporting-maintenance": {
         "task": "reporting_schedules.tasks.process_reporting",
         "schedule": 60.0,
@@ -80,3 +86,16 @@ LOGGING = {
     "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "jsonish"}},
     "root": {"handlers": ["console"], "level": config("LOG_LEVEL", default="INFO")},
 }
+
+
+# Enable only after mounting a protected persistent backup destination.
+BACKUP_AUTOMATION_ENABLED = config("BACKUP_AUTOMATION_ENABLED", default=False, cast=bool)
+if BACKUP_AUTOMATION_ENABLED:
+    if not BACKUP_DIRECTORY or not BACKUP_ENCRYPTION_KEY:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured("Automated backups require a destination and encryption key.")
+    CELERY_BEAT_SCHEDULE["platform-encrypted-backup"] = {
+        "task": "platform_admin.tasks.create_backup",
+        "schedule": 86400.0,
+        "options": {"expires": 3600, "time_limit": 4500, "soft_time_limit": 4440},
+    }

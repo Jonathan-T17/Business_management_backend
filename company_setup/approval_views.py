@@ -4,6 +4,7 @@ from django.db import transaction, IntegrityError
 from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 from workflows.models import WorkflowDefinition, WorkflowStepDefinition
 from organizations.models import Position
 from users.models import User
@@ -45,6 +46,7 @@ class StepInput(serializers.Serializer):
 
 class RouteInput(serializers.Serializer):
     name = serializers.CharField(max_length=120)
+    target_type = serializers.ChoiceField(choices=['FORM_SUBMISSION', 'REQUEST'], required=False)
     description = serializers.CharField(required=False, allow_blank=True)
     is_active = serializers.BooleanField(required=False)
     steps = StepInput(many=True, allow_empty=False)
@@ -61,12 +63,13 @@ class RouteInput(serializers.Serializer):
 
 
 class RouteOutput(serializers.ModelSerializer):
+    target_type = serializers.CharField(source='workflow.target_type', read_only=True)
     steps = serializers.SerializerMethodField()
     steps_editable = serializers.SerializerMethodField()
 
     class Meta:
         model = ApprovalRoute
-        fields = ['id', 'name', 'description', 'is_active', 'workflow', 'steps', 'steps_editable']
+        fields = ['id', 'name', 'description', 'is_active', 'workflow', 'target_type', 'steps', 'steps_editable']
 
     def get_steps_editable(self, obj) -> bool:
         return not obj.workflow.instances.exists()
@@ -82,10 +85,17 @@ class RouteOutput(serializers.ModelSerializer):
                  'notify_in_app':step.notify_in_app} for step in obj.workflow.steps.all()]
 
 
+class RoutePreviewOutput(serializers.Serializer):
+    valid = serializers.BooleanField()
+    steps = StepInput(many=True)
+    message = serializers.CharField()
+
+
 class ApprovalRouteViewSet(CompanyConfigurationViewSet):
     queryset = ApprovalRoute.objects.select_related('workflow').prefetch_related('workflow__steps')
     serializer_class = RouteOutput
 
+    @extend_schema(request=RouteInput, responses=RoutePreviewOutput)
     @action(detail=False, methods=['post'])
     def preview(self, request):
         payload = RouteInput(data=request.data, context=self.get_serializer_context())
@@ -93,9 +103,11 @@ class ApprovalRouteViewSet(CompanyConfigurationViewSet):
         return Response({'valid':True, 'steps':payload.validated_data['steps'],
                          'message':'Configuration is valid. Actual reviewers are resolved when work is submitted.'})
 
+    @extend_schema(request=RouteInput, responses={201:RouteOutput})
     def create(self, request, *args, **kwargs):
         return self.save_route(request)
 
+    @extend_schema(request=RouteInput, responses=RouteOutput)
     def update(self, request, *args, **kwargs):
         return self.save_route(request, instance=self.get_object(), partial=kwargs.get('partial', False))
 
@@ -107,13 +119,15 @@ class ApprovalRouteViewSet(CompanyConfigurationViewSet):
         if instance:
             instance = ApprovalRoute.objects.select_for_update().get(pk=instance.pk, company=request.user.company)
             workflow = WorkflowDefinition.objects.select_for_update().get(pk=instance.workflow_id)
+            if 'target_type' in data and data['target_type'] != workflow.target_type:
+                raise serializers.ValidationError({'target_type': 'Create a new route to change what it approves.'})
             if workflow.form_templates.exclude(lifecycle_status='DRAFT').exists():
                 raise serializers.ValidationError('This route is pinned to a published form. Create a new route.')
             if 'steps' in data and workflow.instances.exists():
                 raise serializers.ValidationError({'steps':'This route has approval history. Create a new route to change its steps.'})
         else:
             workflow = WorkflowDefinition.objects.create(company=request.user.company, name=data['name'],
-                code='approval-'+uuid.uuid4().hex, target_type='FORM_SUBMISSION', created_by=request.user)
+                code='approval-'+uuid.uuid4().hex, target_type=data.get('target_type','FORM_SUBMISSION'), created_by=request.user)
             instance = ApprovalRoute(company=request.user.company, workflow=workflow)
         creating = instance.pk is None
         for field in ('name', 'description', 'is_active'):

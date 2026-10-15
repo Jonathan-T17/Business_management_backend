@@ -5,6 +5,8 @@ from .policy import FormSubmissionDisclosurePolicy
 
 
 def can_read_files(user, submission):
+    if FormAccess.shared_confidential(user, submission):
+        return True
     # A file may contain any answer: require clearance for every schema classification.
     return all(ClassificationPolicy.decision(user=user, classification=value,
         owner_id=submission.submitted_by_id, hide_when_denied=False).mode == DisclosureMode.FULL

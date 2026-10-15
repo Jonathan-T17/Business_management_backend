@@ -96,6 +96,12 @@ class BusinessRequestLifecycleService:
             raise ValidationError({'form_data':'This request type has no configured form.'})
         data.pop("workflow", None)
         data.pop("status", None)
+        filing_branch = form_submission.branch if form_submission else getattr(actor, 'branch', None)
+        if filing_branch and filing_branch.company_id != actor.company_id:
+            raise ValidationError({'branch': 'The filing branch must belong to your company.'})
+        if form_submission and 'branch' in data and getattr(data['branch'], 'pk', None) != form_submission.branch_id:
+            raise ValidationError({'branch': 'The filing branch follows the linked form entry.'})
+        data.setdefault('branch', filing_branch)
         request_obj = BusinessRequest.objects.create(
             company=actor.company,
             requester=actor,
@@ -105,6 +111,7 @@ class BusinessRequestLifecycleService:
             request_type_snapshot={
                 "code": definition.code,
                 "name": definition.name,
+                "sensitive": definition.sensitive,
                 "classification": getattr(definition, "classification", "NORMAL"),
             },
             workflow=definition.workflow,
@@ -148,7 +155,7 @@ class BusinessRequestLifecycleService:
         from requests_app.models import BusinessRequest
         from workflows.runtime_service import WorkflowRuntimeService
 
-        request_obj = BusinessRequest.objects.select_for_update().select_related("workflow").get(pk=request_obj.pk)
+        request_obj = BusinessRequest.objects.select_for_update(of=('self',)).select_related("workflow").get(pk=request_obj.pk)
         if request_obj.requester_id != actor.id or request_obj.status not in cls.EDITABLE:
             raise ValidationError("This request cannot be submitted.")
         if request_obj.form_submission_id:
@@ -234,6 +241,8 @@ class BusinessRequestWorkflowAdapter:
             target.form_submission.status=target.status
             target.form_submission.save(update_fields=['status','updated_at'])
         target.save(update_fields=["status", "approved_at", "updated_at"])
+        from records_management.finalizer import OfficialRecordFinalizer
+        OfficialRecordFinalizer.finalize(source=target, actor=actor, request=request)
 
     @staticmethod
     def on_rejected(*, target, actor, workflow_instance, request=None):

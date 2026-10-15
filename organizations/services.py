@@ -319,8 +319,7 @@ class EmployeeService:
     # ============================================================
 
     @staticmethod
-    @transaction.atomic
-    def assign_position(
+    def validate_position_assignment(
         *,
         profile,
         position,
@@ -331,11 +330,39 @@ class EmployeeService:
                 "Position does not belong to the employee's company."
             )
 
+        if not position.is_active:
+            raise ValidationError("Choose an active position.")
+        if request:
+            from company_setup.capability_policy import SetupCapabilityPolicy
+            SetupCapabilityPolicy.validate_preset(
+                actor=request.user,
+                capabilities=list(position.capability_grants.filter(
+                    company_id=profile.company_id, is_active=True,
+                ).values_list("capability", flat=True)),
+            )
+    @staticmethod
+    @transaction.atomic
+    def assign_position(*, profile, position, request=None):
+        EmployeeService.validate_position_assignment(profile=profile, position=position, request=request)
+        initial_assignment = not profile.position_id
+        if initial_assignment and position.branch_id:
+            profile.branch = position.branch
+            profile.department = position.department
+            profile.team = position.team
+            profile.user.branch = position.branch
+            profile.user.save(update_fields=["branch"])
+        elif initial_assignment and not profile.branch_id:
+            # A position with no fixed workplace must not erase an explicitly
+            # recorded office. Its company-level department/team can provide
+            # defaults only when no workplace has been recorded yet.
+            profile.department = position.department
+            profile.team = position.team
+
         profile.position = position
 
         profile.save(
             update_fields=[
-                "position",
+                "position", "branch", "department", "team",
                 "updated_at",
             ]
         )
@@ -474,6 +501,10 @@ class EmployeeService:
                 "A terminated employee cannot be suspended."
             )
 
+        if profile.user.role == Roles.ADMIN:
+            from users.services import TenantUserLifecycleService
+            TenantUserLifecycleService._guard_last_admin(profile.user, "suspend")
+
         profile.status = "SUSPENDED"
 
         profile.user.is_active = False
@@ -605,6 +636,8 @@ class EmployeeLifecycleService:
         reason="",
         request=None,
     ):
+        if profile.status != "ACTIVE":
+            raise ValidationError("Only an active employee can be placed on leave.")
         profile.status = "ON_LEAVE"
         profile.save(update_fields=["status"])
 
@@ -645,6 +678,8 @@ class EmployeeLifecycleService:
         profile,
         request=None,
     ):
+        if profile.status != "ON_LEAVE":
+            raise ValidationError("Only an employee on leave can return from leave.")
         profile.status = "ACTIVE"
         profile.save(update_fields=["status"])
 
@@ -1207,6 +1242,7 @@ class CapabilityGrantService:
         reason="",
         request=None,
     ):
+        position = Position.objects.select_for_update().get(pk=position.pk)
         if position.company_id != company.id:
             raise ValidationError("Position belongs to another company.")
 
@@ -1218,6 +1254,8 @@ class CapabilityGrantService:
             )
 
         from core.position_scope import BRANCH_CAPABILITIES
+        if position.primary_scope == "BRANCH" and capability not in BRANCH_CAPABILITIES:
+            raise ValidationError("This permission does not support location-limited access. Use a separately authorised company-wide position.")
         if position.assignments.filter(scope="BRANCHES",is_active=True).exists() and capability not in BRANCH_CAPABILITIES:
             raise ValidationError("This position has selected-location assignments. Use a separate position for company-wide permissions.")
         from company_setup.capability_policy import SetupCapabilityPolicy

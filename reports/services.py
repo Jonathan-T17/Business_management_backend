@@ -95,8 +95,8 @@ class ReportWorkflowAdapter:
         target.status = "APPROVED"
         target.approved_at = timezone.now()
         target.save(update_fields=["status", "approved_at", "updated_at"])
-        from records_management.finalizers import OfficialRecordFinalizer
-        OfficialRecordFinalizer.maybe_issue(source=target, actor=actor, workflow_instance=workflow_instance, request=request)
+        from records_management.finalizer import OfficialRecordFinalizer
+        OfficialRecordFinalizer.finalize(source=target, actor=actor, request=request)
 
     @staticmethod
     def on_rejected(*, target, actor, workflow_instance, request=None):

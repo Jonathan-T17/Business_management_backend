@@ -5,7 +5,7 @@ from django.db import transaction
 from django.urls import reverse
 from django.utils import timezone
 from smtplib import SMTPException
-from .exceptions import VerificationEmailUnavailable
+from .exceptions import VerificationEmailUnavailable, AccountAccessUnavailable, account_access_message
 from rest_framework.exceptions import AuthenticationFailed
 
 from rest_framework.exceptions import ValidationError
@@ -17,6 +17,10 @@ from .models import User
 from core.roles import Roles
 from core.action_policy import actions_for, capabilities_for
 class UserSerializer(serializers.ModelSerializer):
+    company_name = serializers.CharField(source="company.name", read_only=True, default=None)
+    branch_name = serializers.CharField(source="branch.name", read_only=True, default=None)
+    position_name = serializers.SerializerMethodField()
+    awaiting_position = serializers.SerializerMethodField()
     context = serializers.SerializerMethodField()
     capabilities = serializers.SerializerMethodField()
     allowed_actions = serializers.SerializerMethodField()
@@ -29,18 +33,34 @@ class UserSerializer(serializers.ModelSerializer):
             "full_name",
             "theme_preference",
             "role",
+            "platform_duty",
             "context",
             "company",
+            "company_name",
             "branch",
+            "branch_name",
+            "position_name",
             "is_active",
             "account_state",
             "email_verified",
             "must_change_password",
             "date_joined",
             "capabilities",
+            "awaiting_position",
             "allowed_actions",
         )
-        read_only_fields = ("role", "company", "branch", "account_state", "email_verified", "must_change_password")
+        read_only_fields = ("role", "platform_duty", "company", "branch", "account_state", "email_verified", "must_change_password")
+
+    def get_awaiting_position(self, obj) -> bool:
+        from companies.invitation_access import awaiting_position
+        return awaiting_position(obj)
+
+    def get_position_name(self, obj) -> str | None:
+        from organizations.models import EmployeeProfile
+        profile = EmployeeProfile.objects.filter(user=obj, company_id=obj.company_id,
+            status="ACTIVE", position__is_active=True, position__company_id=obj.company_id
+        ).select_related("position").first() if obj.company_id else None
+        return profile.position.title if profile else None
 
     def get_context(self, obj) -> str:
         from core.authorization import Authorization
@@ -163,20 +183,20 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         candidate = User.objects.select_related("company").filter(
             email=email
         ).first()
-        if candidate and not Authorization.can_authenticate(candidate):
-            raise serializers.ValidationError(
-                "This account or company is inactive."
-            )
-
         # Lockout check
         if is_account_locked(email, ip):
-            raise serializers.ValidationError("Account temporarily locked.")
+            raise serializers.ValidationError("Too many sign-in attempts. Please wait a few minutes and try again.")
 
         try:
             from django.contrib.auth import authenticate
             self.user = authenticate(request=request, email=email, password=attrs["password"])
             if self.user is None:
-                raise AuthenticationFailed("No active account found with the given credentials")
+                # Django also rejects disabled accounts. Explain that state only
+                # when the supplied password is correct, never from an email alone.
+                if candidate and not Authorization.can_authenticate(candidate) and candidate.check_password(attrs["password"]):
+                    register_failed_attempt(email, ip, reason="Inactive account or company")
+                    raise AccountAccessUnavailable(account_access_message(candidate))
+                raise AuthenticationFailed("Email or password is incorrect. Please try again.")
         except AuthenticationFailed:
             register_failed_attempt(email, ip)
             create_audit_log(
@@ -189,9 +209,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         if not Authorization.can_authenticate(self.user):
             register_failed_attempt(email, ip, reason="Inactive account or company")
-            raise serializers.ValidationError(
-                "This account or company is inactive."
-            )
+            raise AccountAccessUnavailable(account_access_message(self.user))
 
         clear_failed_attempts(email, ip)
 
@@ -202,7 +220,8 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             is_active=True, revoked_at__isnull=True
         ).exists() if raw_device_token else False
 
-        if not trusted:
+        from core.capability_service import CapabilityService
+        if not trusted or CapabilityService.is_platform_operator(self.user):
             # Generate OTP and stop here
             challenge, code = generate_otp(self.user)
             try:
@@ -240,12 +259,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         # Normal flow if trusted
         refresh = RefreshToken.for_user(self.user)
-        data = {"refresh": str(refresh), "access": str(refresh.access_token)}
         session = create_active_session(
             request,
             self.user,
             str(refresh["jti"]),
         )
+        refresh["sid"] = str(session.pk)
+        data = {"refresh": str(refresh), "access": str(refresh.access_token)}
         record_login(request, self.user, successful=True, session=session)
         create_audit_log(user=self.user, action="LOGIN", request=request, description="User logged in")
 
@@ -277,6 +297,14 @@ class ActiveCompanyTokenRefreshSerializer(TokenRefreshSerializer):
         ).first()
         if session is None or (session.expires_at and session.expires_at <= timezone.now()):
             raise serializers.ValidationError("Session is no longer active.")
+        from core.capability_service import CapabilityService
+        if CapabilityService.is_platform_operator(user) and session.mfa_verified_at is None:
+            raise serializers.ValidationError("Sign in again with an email verification code.")
+        if token.get("sid") and token["sid"] != str(session.pk):
+            raise serializers.ValidationError("Session is no longer active.")
+        # Upgrade existing valid refresh sessions without trusting unbound access tokens.
+        token["sid"] = str(session.pk)
+        attrs = {**attrs, "refresh": str(token)}
         data = super().validate(attrs)
         if "refresh" in data:
             rotated = RefreshToken(data["refresh"])

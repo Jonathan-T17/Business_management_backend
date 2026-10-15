@@ -17,6 +17,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 from security.services import create_audit_log, terminate_user_sessions
+from core.capability_service import CapabilityService
 import json
 
 
@@ -34,9 +35,9 @@ RESOURCES = {
         'company name description is_active', True),
     'project-memberships': ('projects.ProjectMembership', 'Project memberships', 'Project access and roles',
         'project user role', True),
-    'plans': ('subscriptions.Plan', 'Subscription plans', 'Prices, capacity and feature availability',
+    'plans': ('subscriptions.Plan', 'Plan catalogue', 'Define available plans, prices, features and capacity limits',
         'name max_users max_projects max_branches storage_limit_bytes ai_analytics_enabled reports_enabled field_operations_enabled advanced_workflows_enabled official_records_enabled custom_forms_enabled price_monthly is_active', True),
-    'subscriptions': ('subscriptions.Subscription', 'Subscription records', 'Company plan, expiry and subscription status',
+    'subscriptions': ('subscriptions.Subscription', 'Renew / reactivate', 'Renew company access while keeping its current plan',
         'company plan is_active expires_at', True),
 
 }
@@ -45,8 +46,8 @@ RESOURCES = {
 class MaintenancePermission(BasePermission):
     def has_permission(self, request, view):
         user = request.user
-        return bool(user and user.is_authenticated and user.is_active and user.is_superuser
-                    and user.is_staff and not user.is_deleted and not user.must_change_password)
+        from core.capabilities import Capabilities
+        return CapabilityService.has(user, Capabilities.PLATFORM_ADMIN)
 
 
 class MaintenanceWriteThrottle(UserRateThrottle):
@@ -103,8 +104,11 @@ def version_for(obj, names):
 
 
 def record(obj, names):
-    return {'id': str(obj.pk), 'label': str(obj), 'values': values_for(obj, names),
-            'version': version_for(obj, names), 'company': str(tenant_id(obj) or '')}
+    result = {'id': str(obj.pk), 'label': str(obj), 'values': values_for(obj, names),
+              'version': version_for(obj, names), 'company': str(tenant_id(obj) or '')}
+    if obj._meta.label == 'subscriptions.Subscription':
+        result['renewed_at'] = obj.renewed_at.isoformat() if obj.renewed_at else None
+    return result
 
 
 def describe_fields(model, names):
@@ -173,6 +177,11 @@ def validate_boundaries(key, obj, previous):
             SubscriptionCapacity.validate(company, plan)
             if key == 'subscriptions' and obj.is_active and not plan.is_active:
                 raise ValidationError('Choose an active plan before activating a subscription.')
+            if key == 'subscriptions' and obj.is_active and (
+                    previous is None or not previous.is_active or previous.expires_at != obj.expires_at):
+                from django.utils import timezone
+                if obj.expires_at and obj.expires_at <= timezone.now():
+                    raise ValidationError({'expires_at': 'Choose a future expiry date or no expiry before activating.'})
 
 
 class MaintenanceCatalogue(APIView):
@@ -244,6 +253,10 @@ class MaintenanceRecords(APIView):
             raise ValidationError(dict(form.errors))
         obj = form.save(commit=False)
         validate_boundaries(key, obj, previous)
+        if key == 'subscriptions' and previous and obj.is_active and (
+                not previous.is_active or previous.expires_at != obj.expires_at):
+            from django.utils import timezone
+            obj.renewed_at = timezone.now()
         for attr in ('created_by', 'added_by'):
             if previous is None and hasattr(obj, attr + '_id'):
                 setattr(obj, attr, actor)

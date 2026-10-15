@@ -6,6 +6,31 @@ from django.db import models
 from django.utils import timezone
 
 
+class AdministratorPasskey(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="administrator_passkeys")
+    name = models.CharField(max_length=80)
+    credential_id = models.CharField(max_length=1400, unique=True)
+    public_key = models.BinaryField()
+    sign_count = models.PositiveBigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+
+class PasskeyChallenge(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    purpose = models.CharField(max_length=12, choices=(("REGISTER", "Register"), ("LOGIN", "Login")))
+    challenge = models.BinaryField()
+    password_digest = models.CharField(max_length=64)
+    session = models.ForeignKey("ActiveSession", null=True, blank=True, on_delete=models.CASCADE)
+    name = models.CharField(max_length=80, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+
 class AuditLog(models.Model):
     STATUS_CHOICES = (("SUCCESS", "Success"), ("FAILED", "Failed"))
     SEVERITY_CHOICES = (("INFO", "Info"), ("WARNING", "Warning"), ("CRITICAL", "Critical"))
@@ -57,6 +82,7 @@ class ActiveSession(models.Model):
     device = models.CharField(max_length=255, blank=True)
     last_activity = models.DateTimeField(auto_now=True)
     expires_at = models.DateTimeField(null=True, blank=True)
+    mfa_verified_at = models.DateTimeField(null=True, blank=True)
     terminated_at = models.DateTimeField(null=True, blank=True)
     terminated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="terminated_sessions")
     termination_reason = models.CharField(max_length=30, choices=TERMINATION_REASONS, blank=True)

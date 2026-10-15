@@ -222,6 +222,11 @@ class Team(models.Model):
 
 class Position(models.Model):
 
+    primary_scope = models.CharField(
+        max_length=20, choices=[("COMPANY", "Company-wide"), ("BRANCH", "Position location only")],
+        default="COMPANY",
+    )
+
     company = models.ForeignKey(
         "companies.Company",
         on_delete=models.CASCADE,
@@ -253,6 +258,10 @@ class Position(models.Model):
             models.UniqueConstraint(
                 fields=["company", "title"],
                 name="unique_position_per_company",
+            ),
+            models.CheckConstraint(
+                condition=Q(primary_scope="COMPANY") | Q(primary_scope="BRANCH", branch__isnull=False),
+                name="position_primary_scope_has_location",
             ),
         ]
 

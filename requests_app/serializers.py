@@ -12,6 +12,21 @@ class BusinessRequestSerializer(
 ):
 
     form_attachment_submission_id = serializers.SerializerMethodField()
+    attachment_policy = serializers.SerializerMethodField()
+    request_type_policy = serializers.SerializerMethodField()
+
+    def get_request_type_policy(self, obj) -> dict | None:
+        from .services import BusinessRequestLifecycleService
+        definition = BusinessRequestLifecycleService.resolve_definition(obj)
+        if not definition:
+            return None
+        return {field: getattr(definition, field) for field in ('name', 'amount_enabled', 'amount_required', 'quantity_enabled', 'quantity_required', 'needed_by_enabled', 'needed_by_required')}
+
+    def get_attachment_policy(self, obj) -> dict:
+        from .services import BusinessRequestLifecycleService
+        definition = BusinessRequestLifecycleService.resolve_definition(obj)
+        return {'allowed': bool(definition and definition.attachments_allowed),
+                'required': bool(definition and definition.attachments_required)}
 
     def get_form_attachment_submission_id(self, obj) -> str | None:
         if not obj.form_submission_id:
@@ -58,7 +73,7 @@ class BusinessRequestSerializer(
     class Meta:
         model = BusinessRequest
 
-        fields = ('form_attachment_submission_id', 'form_data', 'form_schema', 'form_answers', 'allowed_actions', 'id', 'requester_name', 'branch_name', 'department_name', 'request_number', 'request_type', 'request_type_snapshot', 'priority', 'title', 'description', 'amount', 'currency', 'quantity', 'unit', 'needed_by', 'status', 'submitted_at', 'approved_at', 'fulfilled_at', 'created_at', 'updated_at', 'company', 'branch', 'department', 'requester', 'request_type_definition', 'project', 'task', 'workflow')
+        fields = ('request_type_policy', 'attachment_policy', 'form_attachment_submission_id', 'form_data', 'form_schema', 'form_answers', 'allowed_actions', 'id', 'requester_name', 'branch_name', 'department_name', 'request_number', 'request_type', 'request_type_snapshot', 'priority', 'title', 'description', 'amount', 'currency', 'quantity', 'unit', 'needed_by', 'status', 'submitted_at', 'approved_at', 'fulfilled_at', 'created_at', 'updated_at', 'company', 'branch', 'department', 'requester', 'request_type_definition', 'project', 'task', 'workflow')
 
         read_only_fields = (
             "company",

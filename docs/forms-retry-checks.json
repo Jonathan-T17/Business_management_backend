@@ -1,0 +1,21 @@
+{
+  "scope": "Actual frontend helper with simulated transport only; no live requests or files",
+  "checks": [
+    {
+      "check": "Interrupted second upload",
+      "draftCreations": 1,
+      "draftUpdates": 1,
+      "submissions": 1,
+      "uploaded": [
+        "first.txt",
+        "second.txt"
+      ],
+      "result": "Existing draft reused; successful upload not repeated; submit waits for all files"
+    },
+    {
+      "check": "Initial create response lost",
+      "draftCreations": 2,
+      "result": "Duplicate draft creation reproduced with simulated transport; idempotency needed"
+    }
+  ]
+}

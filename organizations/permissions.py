@@ -177,8 +177,7 @@ class CanManageEmployees(BasePermission):
     """
     Controls employee-management operations.
 
-    Requires MANAGE_EMPLOYEES. Existing company and branch object
-    restrictions still apply; a role alone does not grant this authority.
+    Requires company-scoped MANAGE_EMPLOYEES and a matching tenant.
     """
 
     def has_permission(self, request, view):
@@ -187,7 +186,7 @@ class CanManageEmployees(BasePermission):
         if not CapabilityService.is_tenant_identity(user):
             return False
 
-        return CapabilityService.has(user, Capabilities.MANAGE_EMPLOYEES)
+        return CapabilityService.has_company(user, Capabilities.MANAGE_EMPLOYEES)
 
     def has_object_permission(self, request, view, obj):
         user = request.user
@@ -199,13 +198,7 @@ class CanManageEmployees(BasePermission):
         if obj_company != user.company:
             return False
 
-        if user.role == Roles.ADMIN:
-            return True
-
-        if user.role == Roles.MANAGER:
-            return getattr(obj, "branch", None) == user.branch
-
-        return False
+        return True
 
 class CanManageOrganization(BasePermission):
     def has_permission(self, request, view):

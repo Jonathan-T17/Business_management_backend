@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from core.sequence import company_local_date
 from workflows.services import WorkflowService
 
 from .models import (
@@ -30,6 +31,8 @@ class FormSubmissionService:
         ):
 
             fields.append({
+                "help_text": field.help_text,
+                "placeholder": field.placeholder,
                 "classification": field.classification,
                 "key":
                     field.key,
@@ -54,6 +57,7 @@ class FormSubmissionService:
             })
 
         return {
+            "source_starter": template.source_starter,
             "template_id":
                 str(template.id),
 
@@ -200,11 +204,23 @@ class FormSubmissionService:
         field_type = (
             field.field_type
         )
+        if field_type == 'ITEM_LIST':
+            from .materials import item_list
+            try:
+                item_list(value)
+            except Exception as exc:
+                from rest_framework.exceptions import ValidationError as APIValidationError
+                if isinstance(exc, APIValidationError):
+                    raise ValidationError(str(exc.detail))
+                raise
+            return
 
         rules = (
             field.validation_rules
             or {}
         )
+        from .validation import validate_rules, finite_number
+        validate_rules(rules)
 
         # ------------------------------------
         # TEXT
@@ -232,6 +248,9 @@ class FormSubmissionService:
             max_length = rules.get(
                 "max_length"
             )
+            if field_type == 'EMAIL':
+                from django.core.validators import validate_email
+                validate_email(value)
 
             if (
                 min_length is not None
@@ -270,7 +289,10 @@ class FormSubmissionService:
                 )
 
             try:
-                number = int(value)
+                decimal = finite_number(value)
+                if decimal != decimal.to_integral_value():
+                    raise ValidationError('Must be a whole number.')
+                number = decimal
             except (
                 TypeError,
                 ValueError,
@@ -293,9 +315,7 @@ class FormSubmissionService:
         if field_type == "DECIMAL":
 
             try:
-                number = Decimal(
-                    str(value)
-                )
+                number = finite_number(value)
 
             except (
                 InvalidOperation,
@@ -453,6 +473,19 @@ class FormSubmissionService:
                 raise ValidationError(
                     "Must be an ISO date/time string."
                 )
+            from datetime import date, datetime, time
+            import re
+            patterns = {
+                'DATE': r'\d{4}-\d{2}-\d{2}',
+                'TIME': r'\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?',
+                'DATETIME': r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})?',
+            }
+            try:
+                if not re.fullmatch(patterns[field_type], value):
+                    raise ValueError()
+                {'DATE': date, 'TIME': time, 'DATETIME': datetime}[field_type].fromisoformat(value)
+            except ValueError:
+                raise ValidationError(f'Enter a valid {field_type.lower().replace("datetime", "date and time")}.')
 
             return
 
@@ -513,17 +546,25 @@ class FormSubmissionService:
         team=None,
         project=None,
         task=None,
+        client_request_id=None,
     ):
 
         from .access import FormAccess
+        company = user.company
+        if template.company_id != company.pk or not FormAccess.can_submit(user):
+            raise ValidationError('This form is not available in your company.')
+        if client_request_id:
+            # Serialize retries within the tenant before allocating a reference.
+            type(company).objects.select_for_update().get(pk=company.pk)
+            existing = FormSubmission.objects.filter(company=company, submitted_by=user, client_request_id=client_request_id).first()
+            if existing:
+                if existing.template_id != template.pk:
+                    raise ValidationError({'client_request_id': 'This entry reference is already used for a different form.'})
+                return existing
         if not FormAccess.eligible(user,template):
             raise ValidationError('This published form is not available to you.')
         if not template.is_active:
-            raise ValidationError(
-                "Form template is inactive."
-            )
-
-        company = user.company
+            raise ValidationError('Form template is inactive.')
 
         if (
             template.company_id
@@ -534,6 +575,9 @@ class FormSubmissionService:
             )
 
         # A branch-specific form keeps its branch when filled through another position.
+        requested_branch = branch
+        if requested_branch is not None and not FormAccess.filing_branches(user, template).filter(pk=requested_branch.pk).exists():
+            raise ValidationError('Choose a submission location within your assigned access and this form’s audience.')
         branch = branch or template.branch or getattr(user,"branch",None)
         department = department or template.department
         team = team or template.team
@@ -541,6 +585,12 @@ class FormSubmissionService:
         from core.position_scope import PositionScope
         if not (CapabilityService.has_company(user,"SUBMIT_FORMS") or CapabilityService.has_company(user,"USE_FORMS")):
             allowed=PositionScope.branches_for(user,"SUBMIT_FORMS") | PositionScope.branches_for(user,"USE_FORMS")
+            primary = PositionScope.primary_position(user)
+            if requested_branch is None and template.branch_id is None and primary and primary.primary_scope == "BRANCH":
+                if PositionScope.primary_capabilities(user) & {"SUBMIT_FORMS", "USE_FORMS"}:
+                    branch = primary.branch
+            if FormAccess.default_member_access(user):
+                  allowed.add(getattr(FormAccess.starting_branch(user), 'pk', None))
             if getattr(branch,"pk",None) not in allowed:
                 raise ValidationError("Choose a submission location within your assigned access.")
 
@@ -554,7 +604,8 @@ class FormSubmissionService:
             task=task,
         )
 
-        data = data or {}
+        from .defaults import apply_defaults
+        data = apply_defaults(cls.build_schema_snapshot(template), user, data, branch=branch)
 
         cls.validate_data(
             template=template,
@@ -567,6 +618,7 @@ class FormSubmissionService:
                 company=company,
                 template=template,
                 submitted_by=user,
+                client_request_id=client_request_id,
 
                 branch=(
                     branch
@@ -589,7 +641,7 @@ class FormSubmissionService:
 
                 reporting_date=(
                     reporting_date
-                    or timezone.localdate()
+                    or company_local_date(company)
                 ),
 
                 data=data,
@@ -661,6 +713,10 @@ class FormSubmissionService:
         if workflow and workflow.pk != submission.template.workflow_id:
             raise ValidationError('The published template determines the workflow.')
         workflow=submission.template.workflow
+        if submission.template.source_starter in {'material-dispatch','material-receipt','material-return'}:
+            raise ValidationError('Record this action from its approved material request so quantities stay connected.')
+        if submission.template.source_starter == 'material-request' and not workflow:
+            raise ValidationError('Material requests require an assigned review route.')
         if not workflow:
             submission.status='SUBMITTED';submission.submitted_at=timezone.now()
             submission.save(update_fields=['status','submitted_at','updated_at'])
@@ -846,6 +902,6 @@ class FormSubmissionService:
 
         return (
             value is None
-            or value == ""
+            or (isinstance(value, str) and not value.strip())
             or value == []
         )

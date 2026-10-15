@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 
@@ -9,11 +9,13 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema
 
 from core.roles import Roles
 from core.capabilities import Capabilities
 from core.capability_service import CapabilityService
 from security.services import create_audit_log
+from notifications.services import CommunicationService
 
 from companies.models import Branch
 from users.models import User
@@ -37,6 +39,11 @@ from .serializers import (
     TeamSerializer,
     PositionSerializer,
     EmployeeProfileSerializer,
+    EmployeeDirectorySerializer,
+    EmployeeDirectoryOverviewSerializer,
+    EmployeeAccessSummarySerializer,
+    PrimaryPositionPreviewInputSerializer,
+    EmployeeAccessChangeSerializer,
     EmployeeTransferSerializer,
     EmployeeNoteSerializer,
     EmployeeDelegationSerializer,
@@ -386,9 +393,16 @@ class PositionViewSet(OrganizationBaseViewSet):
         if not CapabilityService.is_tenant_identity(user):
             return queryset.none()
 
-        return queryset.filter(
-            company_id=user.company_id
-        )
+        queryset = queryset.filter(company_id=user.company_id)
+        if self.action in ("update", "partial_update"):
+            queryset = queryset.select_for_update(of=("self",))
+        return queryset
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        # Serialize structural edits with access reviews so a stale model save
+        # cannot restore a scope that another administrator just changed.
+        return super().update(request, *args, **kwargs)
 
     # --------------------------------------------------------
     # Permissions
@@ -418,6 +432,7 @@ class PositionViewSet(OrganizationBaseViewSet):
 
         position = serializer.save(
             company=company,
+            primary_scope="BRANCH" if serializer.validated_data.get("branch") else "COMPANY",
         )
 
         create_audit_log(
@@ -471,6 +486,20 @@ class EmployeeProfileViewSet(OrganizationBaseViewSet):
 
     serializer_class = EmployeeProfileSerializer
 
+    # Search is applied after the tenant/branch queryset restrictions below.
+    search_fields = ("user__full_name", "user__email", "employee_id")
+    ordering = ("user__full_name", "id")
+    filterset_fields = ("branch", "department", "team", "position", "status")
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return EmployeeDirectorySerializer
+        if self.action == "overview":
+            return EmployeeDirectoryOverviewSerializer
+        if self.action == "access_summary":
+            return EmployeeAccessSummarySerializer
+        return EmployeeProfileSerializer
+
     # --------------------------------------------------------
     # Queryset
     # --------------------------------------------------------
@@ -488,27 +517,53 @@ class EmployeeProfileViewSet(OrganizationBaseViewSet):
             "position",
         )
 
-        if not CapabilityService.is_tenant_identity(user):
-            return queryset.none()
+        from .directory import directory_queryset
+        return directory_queryset(user, queryset)
 
-        queryset = queryset.filter(
-            company_id=user.company_id
+    @action(detail=False, methods=["get"])
+    def overview(self, request):
+        from django.db.models import Count, Q
+        from django.utils import timezone
+        from companies.models import CompanyInvite
+        from .directory import directory_scope
+
+        scope, branch_ids = directory_scope(request.user)
+        profiles = self.get_queryset()
+        counts = profiles.aggregate(
+            total_profiles=Count("id"),
+            current_employees=Count("id", filter=~Q(status="TERMINATED")),
+            active=Count("id", filter=Q(status="ACTIVE")),
+            on_leave=Count("id", filter=Q(status="ON_LEAVE")),
+            suspended=Count("id", filter=Q(status="SUSPENDED")),
+            terminated=Count("id", filter=Q(status="TERMINATED")),
+            awaiting_position=Count("id", filter=~Q(status="TERMINATED") & (Q(position__isnull=True) | Q(position__is_active=False))),
         )
-
-        if user.role == Roles.ADMIN:
-            return queryset
-
-        if user.role == Roles.MANAGER:
-            return queryset.filter(
-                branch_id=user.branch_id
-            )
-
-        if user.role == Roles.EMPLOYEE:
-            return queryset.filter(
-                user_id=user.id
-            )
-
-        return queryset.none()
+        rows = profiles.values("branch_id").annotate(
+            total=Count("id"), current=Count("id", filter=~Q(status="TERMINATED")),
+            active=Count("id", filter=Q(status="ACTIVE")),
+            on_leave=Count("id", filter=Q(status="ON_LEAVE")),
+            suspended=Count("id", filter=Q(status="SUSPENDED")),
+            terminated=Count("id", filter=Q(status="TERMINATED")),
+        ).order_by()
+        by_branch = {row["branch_id"]: row for row in rows}
+        offices = Branch.objects.filter(company_id=request.user.company_id)
+        if scope != "COMPANY":
+            # Include the caller's profile location only when that row is visible.
+            offices = offices.filter(pk__in=set(branch_ids) | set(key for key in by_branch if key is not None))
+        branches = []
+        for office in offices.order_by("name", "id"):
+            row = by_branch.get(office.pk, {})
+            branches.append({"id": office.pk, "name": office.name, **{key: row.get(key, 0) for key in ("total", "current", "active", "on_leave", "suspended", "terminated")}})
+        if None in by_branch:
+            branches.append({"id": None, "name": "No branch recorded", **{key: value for key, value in by_branch[None].items() if key != "branch_id"}})
+        accounts = User.objects.filter(company_id=request.user.company_id, is_deleted=False, is_superuser=False).exclude(role=Roles.SUPERUSER)
+        return Response(self.get_serializer({
+            "scope": scope, **counts, "branches": branches,
+            "workspace_accounts": accounts.count() if scope == "COMPANY" else None,
+            "accounts_without_profile": accounts.filter(employee_profile__isnull=True).count() if scope == "COMPANY" else None,
+            "pending_invitations": CompanyInvite.objects.filter(company_id=request.user.company_id, status="PENDING", expires_at__gt=timezone.now()).count() if scope == "COMPANY" else None,
+            "self_profile_id": profiles.filter(user=request.user).values_list("id", flat=True).first(),
+        }).data)
 
     # --------------------------------------------------------
     # Permissions
@@ -521,9 +576,14 @@ class EmployeeProfileViewSet(OrganizationBaseViewSet):
                 IsOrganizationAdmin(),
             ]
 
+        if self.action in {"assign_position", "access_summary", "preview_position"}:
+            from company_setup.permissions import IsCompanySetupAdmin
+            return [IsAuthenticated(), CanManageEmployees(), IsCompanySetupAdmin()]
+
         if self.action in (
             "list",
             "retrieve",
+            "overview",
         ):
             return [
                 IsAuthenticated(),
@@ -538,6 +598,11 @@ class EmployeeProfileViewSet(OrganizationBaseViewSet):
     # --------------------------------------------------------
     # Create
     # --------------------------------------------------------
+
+    @action(detail=True, methods=["get"], url_path="access-summary")
+    def access_summary(self, request, pk=None):
+        from .access_summary import employee_access_summary
+        return Response(self.get_serializer(employee_access_summary(self.get_object())).data)
 
     def perform_create(self, serializer):
         company = self.require_company()
@@ -1053,6 +1118,22 @@ class EmployeeProfileViewSet(OrganizationBaseViewSet):
     # ========================================================
     # Assign Position
     # ========================================================
+
+    @extend_schema(request=PrimaryPositionPreviewInputSerializer, responses=EmployeeAccessChangeSerializer)
+    @action(detail=True, methods=["post"], url_path="preview-position")
+    def preview_position(self, request, pk=None):
+        from .access_projection import primary_position_projection
+        from .access_summary import employee_access_summary
+        profile = self.get_object()
+        data = PrimaryPositionPreviewInputSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        position = get_object_or_404(Position, pk=data.validated_data['position'], company_id=profile.company_id)
+        EmployeeService.validate_position_assignment(profile=profile, position=position, request=request)
+        return Response(EmployeeAccessChangeSerializer({
+            'employee_name': profile.user.full_name,
+            'before': employee_access_summary(profile),
+            'after': primary_position_projection(profile, position),
+        }).data)
 
     @action(
         detail=True,

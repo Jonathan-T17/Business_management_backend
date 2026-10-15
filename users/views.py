@@ -68,7 +68,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsSuperUserOrCompanyAdmin]
 
     def get_queryset(self):
-        return TenantService.users(self.request.user)
+        return TenantService.users(self.request.user).order_by('pk')
 
     @action(
         detail=False,
@@ -96,7 +96,7 @@ class ProfileViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsSelf]
 
     def get_queryset(self):
-        return User.objects.filter(id=self.request.user.id)
+        return User.objects.filter(id=self.request.user.id).order_by('pk')
 
 
 
@@ -158,10 +158,10 @@ class VerifyEmailView(APIView):
             uid = urlsafe_base64_decode(uidb64).decode()
             user = User.objects.get(pk=uid)
         except Exception:
-            return Response({"error": "Invalid link"}, status=400)
+            return Response({"error": "This email-verification link is invalid or incomplete. Request a new verification link."}, status=400)
         
         if user.email_verified:
-            return Response({"message": "Email already verified"}, status=400)
+            return Response({"message": "Your email is already verified. You can sign in."}, status=400)
 
         if email_verification_token.check_token(user, token):
             TenantUserLifecycleService.verify_email(user=user, request=request)
@@ -173,7 +173,7 @@ class VerifyEmailView(APIView):
                 description="Email verified",
                 status="SUCCESS"
             )
-            return Response ({"message": "Email verified Sucessfully"}, status=200)
+            return Response ({"message": "Your email is verified. You can now sign in."}, status=200)
         else:
             SecurityAudit.log(
                 user=user,
@@ -183,7 +183,7 @@ class VerifyEmailView(APIView):
                 status="FAILED"
             )
 
-            return Response({"message": "Email verification failed"}, status=400)
+            return Response({"message": "This email-verification link has expired or is invalid. Request a new verification link."}, status=400)
 
         return Response({"error": "Invalid or expired token"}, status=400)
 
@@ -208,7 +208,7 @@ class ResendVerificationView(APIView):
             pass  # hide existence
 
         return Response(
-            {"message": "If an account exists, email has been sent."},
+            {"message": "If an unverified account exists for this email, a verification link has been sent."},
             status=200,
         )
 
@@ -268,10 +268,10 @@ class ConfirmPasswordResetView(APIView):
             uid = urlsafe_base64_decode(uidb64).decode()
             user = User.objects.get(pk=uid)
         except Exception:
-            return Response({"error": "Invalid request"}, status=400)
+            return Response({"error": "This password-reset link is invalid or incomplete. Request a new reset link."}, status=400)
 
         if not password_reset_token.check_token(user, token):
-            return Response({"error": "Invalid or expired token"}, status=400)
+            return Response({"error": "This password-reset link has expired or is invalid. Request a new reset link."}, status=400)
 
         try:
             validate_password(new_password, user)
@@ -300,22 +300,23 @@ class ConfirmPasswordResetView(APIView):
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request):
         try:
             refresh_token = request.data.get("refresh")
             token = RefreshToken(refresh_token)
-            token.blacklist()
 
             # Terminate ActiveSession
             session = ActiveSession.objects.filter(
                 user=request.user,
                 refresh_token_jti=token["jti"]
             ).first()
-
-            if session:
-                session.is_active = False
-                session.terminated_at = timezone.now()
-                session.save()
+            if session is None or str(token["user_id"]) != str(request.user.pk):
+                return Response({"error": "Invalid or expired refresh token"}, status=400)
+            if token.get("sid") and token["sid"] != str(session.pk):
+                return Response({"error": "Invalid or expired refresh token"}, status=400)
+            from security.services import terminate_session
+            terminate_session(session=session, actor=request.user, reason="LOGOUT", request=request)
 
             # Audit log
             SecurityAudit.log(
@@ -410,7 +411,8 @@ class VerifyOTPView(APIView):
 
         # Trust device if user opts in
         device_token = None
-        if request.data.get("trust_device") is True:
+        from core.capability_service import CapabilityService
+        if request.data.get("trust_device") is True and not CapabilityService.is_platform_identity(user):
             device_token, token_hash = issue_trusted_device_token()
             TrustedDevice.objects.create(
                 user=user,
@@ -431,7 +433,9 @@ class VerifyOTPView(APIView):
             request,
             user,
             str(refresh["jti"]),
+            mfa_verified=True,
         )
+        refresh["sid"] = str(session.pk)
 
         # Record login history
         record_login(request, user, successful=True, session=session)

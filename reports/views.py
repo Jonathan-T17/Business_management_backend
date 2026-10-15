@@ -103,7 +103,7 @@ class ReportViewSet(SecureModelViewSet):
             company=report.company,
             project=report.project,
             task=report.task,
-            action="REPORT_SUBMITTED",
+            action="REPORT_CREATED",
             metadata={
                 "object_type": "Report",
                 "object_id": str(report.id),
@@ -112,70 +112,27 @@ class ReportViewSet(SecureModelViewSet):
             },
         )
 
-        self._notify_report_submitted(report)
 
 
-    def _notify_report_submitted(self, report):
-        if not report.project:
-            return
-    
-        # Notify project members (in-app only)
-        memberships = (
-            ProjectMembership.objects
-            .filter(project=report.project)
-            .exclude(user=self.request.user)
-            .select_related("user")
-        )
-    
-        for membership in memberships:
-            create_notification(
-                recipient=membership.user,
-                company=report.company,
-                notification_type="REPORT_SUBMITTED",
-                title="New Report Submitted",
-                message=f"A new report '{report.title}' was submitted in project '{report.project.name}'.",
-                reference_id=str(report.id),
-            )
-    
-        # Extra: send email for important report types
-        if report.report_type in ("INCIDENT", "REQUEST"):
-    
-            # Company admins
-            company_admins = User.objects.filter(
-                company=report.company,
-                role="ADMIN",
-                is_active=True,
-            )
-    
-            # Branch manager if branch exists
-            branch_manager = getattr(report.branch, "manager", None) if report.branch else None
-    
-            recipients = list(company_admins)
-            if branch_manager:
-                recipients.append(branch_manager)
-    
-            for recipient in recipients:
-                CommunicationService.send(
-                    recipient=recipient,
-                    company=report.company,
-                    notification_type="REPORT_SUBMITTED",
-                    title="New report submitted",
-                    message=f"'{report.title}' was submitted.",
-                    reference_id=str(report.id),
-                    url=f"/reports/{report.id}",
-                    send_email=True,
-                    email_subject=f"New {report.report_type.lower()} report",
-                    email_template="emails/report_notification.html",
-                    email_context={
-                        "report": report,
-                        "action_url": f"{settings.FRONTEND_URL}/reports/{report.id}",
-                    },
-                )
 
 
     # --------------------------------------------------------
     # Update
     # --------------------------------------------------------
+
+    @staticmethod
+    def _critical_notification_recipients(report):
+        candidates = list(User.objects.filter(
+            company=report.company, role="ADMIN", is_active=True, is_deleted=False,
+        ))
+        branch_manager = getattr(report.branch, "manager", None) if report.branch else None
+        if branch_manager:
+            candidates.append(branch_manager)
+        return list({user.pk: user for user in candidates if (
+            user.is_active and not user.is_deleted
+            and user.company_id == report.company_id
+            and VisibilityService.can_view_report(user, report)
+        )}.values())
 
     def perform_update(self, serializer):
         report = serializer.save()
@@ -195,23 +152,7 @@ class ReportViewSet(SecureModelViewSet):
     
         # Escalate updates for critical report types
         if report.report_type in ("INCIDENT", "REQUEST"):
-            from users.models import User
-    
-            # Company admins
-            company_admins = User.objects.filter(
-                company=report.company,
-                role="ADMIN",
-                is_active=True,
-            )
-    
-            # Branch manager if branch exists
-            branch_manager = getattr(report.branch, "manager", None) if report.branch else None
-    
-            recipients = list(company_admins)
-            if branch_manager:
-                recipients.append(branch_manager)
-    
-            for recipient in recipients:
+            for recipient in self._critical_notification_recipients(report):
                 CommunicationService.send(
                     recipient=recipient,
                     company=report.company,
@@ -235,6 +176,9 @@ class ReportViewSet(SecureModelViewSet):
     # --------------------------------------------------------
 
     def perform_destroy(self, instance):
+        # Resolve visibility before deletion removes workflow participation.
+        report_id = str(instance.pk)
+        recipients = self._critical_notification_recipients(instance) if instance.report_type in ("INCIDENT", "REQUEST") else []
         ActivityAudit.log(
             user=self.request.user,
             company=instance.company,
@@ -252,22 +196,6 @@ class ReportViewSet(SecureModelViewSet):
     
         # Escalate deletion for critical report types
         if instance.report_type in ("INCIDENT", "REQUEST"):
-            from users.models import User
-    
-            # Company admins
-            company_admins = User.objects.filter(
-                company=instance.company,
-                role="ADMIN",
-                is_active=True,
-            )
-    
-            # Branch manager if branch exists
-            branch_manager = getattr(instance.branch, "manager", None) if instance.branch else None
-    
-            recipients = list(company_admins)
-            if branch_manager:
-                recipients.append(branch_manager)
-    
             for recipient in recipients:
                 CommunicationService.send(
                     recipient=recipient,
@@ -275,14 +203,14 @@ class ReportViewSet(SecureModelViewSet):
                     notification_type="REPORT_DELETED",
                     title="Report Deleted",
                     message=f"'{instance.title}' was deleted.",
-                    reference_id=str(instance.id),
-                    url=f"/reports/{instance.id}",
+                    reference_id=report_id,
+                    url="/reports",
                     send_email=True,
                     email_subject=f"{instance.report_type.title()} report deleted",
                     email_template="emails/report_notification.html",
                     email_context={
                         "report": instance,
-                        "action_url": f"{settings.FRONTEND_URL}/reports/{instance.id}",
+                        "action_url": f"{settings.FRONTEND_URL}/reports",
                     },
                 )
     
@@ -379,17 +307,19 @@ class ReportViewSet(SecureModelViewSet):
 
     def _notify_report_submitted(self, report):
 
-        if not report.project:
+        if not report.project or report.status in ("DRAFT", "RETURNED"):
             return
 
         memberships = (
             ProjectMembership.objects
-            .filter(project=report.project)
+            .filter(project=report.project, user__company=report.company, user__is_active=True, user__is_deleted=False)
             .exclude(user=self.request.user)
             .select_related("user")
         )
 
         for membership in memberships:
+            if not VisibilityService.can_view_report(membership.user, report):
+                continue
 
             create_notification(
                 recipient=membership.user,
@@ -468,6 +398,7 @@ class ReportViewSet(SecureModelViewSet):
         )
     
         report.refresh_from_db()
+        self._notify_report_submitted(report)
     
         return Response(
             {
@@ -558,57 +489,6 @@ class ReportCommentViewSet(SecureModelViewSet):
 
         self._notify_comment(comment)
 
-    def _notify_comment(self, comment):
-        report = comment.report
-        recipients = set()
-    
-        # Original report author
-        if report.created_by and report.created_by_id != self.request.user.id:
-            recipients.add(report.created_by_id)
-    
-        # Project members
-        if report.project:
-            memberships = (
-                ProjectMembership.objects
-                .filter(project=report.project)
-                .exclude(user=self.request.user)
-                .select_related("user")
-            )
-            for membership in memberships:
-                recipients.add(membership.user_id)
-    
-        users = report.company.users.filter(id__in=recipients)
-    
-        for user in users:
-            # Default in-app notification
-            create_notification(
-                recipient=user,
-                company=report.company,
-                notification_type="REPORT_COMMENT",
-                title="New Report Comment",
-                message=f"A new comment was added to report '{report.title}'.",
-                reference_id=str(report.id),
-            )
-    
-            # Extra: escalate via email for critical report types
-            if report.report_type in ("INCIDENT", "REQUEST"):
-                CommunicationService.send(
-                    recipient=user,
-                    company=report.company,
-                    notification_type="REPORT_COMMENT",
-                    title="New Report Comment",
-                    message=f"A new comment was added to report '{report.title}'.",
-                    reference_id=str(report.id),
-                    url=f"/reports/{report.id}",
-                    send_email=True,
-                    email_subject=f"New comment on {report.report_type.lower()} report",
-                    email_template="emails/report_notification.html",
-                    email_context={
-                        "report": report,
-                        "comment": comment,
-                        "action_url": f"{settings.FRONTEND_URL}/reports/{report.id}",
-                    },
-                )
 
     # --------------------------------------------------------
     # Update
@@ -721,10 +601,12 @@ class ReportCommentViewSet(SecureModelViewSet):
 
         users = (
             report.company.users
-            .filter(id__in=recipients)
+            .filter(id__in=recipients, is_active=True, is_deleted=False)
         )
 
         for user in users:
+            if not VisibilityService.can_view_report(user, report):
+                continue
 
             create_notification(
                 recipient=user,

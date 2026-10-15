@@ -25,6 +25,13 @@ class AttachmentAccessService:
         if parent._meta.label_lower == 'forms_engine.formsubmission':
             from forms_engine.attachments import can_upload_files
             return can_upload_files(user, parent)
+        if parent._meta.label_lower == 'requests_app.businessrequest':
+            if parent.form_submission_id:
+                return False  # Linked forms keep their own file disclosure policy.
+            from requests_app.services import BusinessRequestLifecycleService
+            definition = BusinessRequestLifecycleService.resolve_definition(parent)
+            return (parent.requester_id == user.pk and parent.status in {'DRAFT', 'RETURNED'}
+                    and bool(definition and definition.attachments_allowed))
         return VisibilityService.can_view_generic_object(user=user, obj=parent)
 
 
